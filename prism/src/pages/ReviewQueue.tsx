@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { timeAgo } from '../utils/time';
+import { FineTuneTab } from './FineTuneTab';
 import '../styles/tokens.css';
 import '../styles/reviewqueue.css';
 
@@ -36,6 +37,8 @@ export function ReviewQueue() {
   const [bannerVisible, setBannerVisible] = useState(true);
   const [reviewerNotes, setReviewerNotes] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'escalations' | 'finetune'>('escalations');
+  const [ftPendingCount, setFtPendingCount] = useState<number | null>(null);
 
   async function loadQueue() {
     try {
@@ -90,6 +93,27 @@ export function ReviewQueue() {
           </div>
         </div>
 
+        <div className="rq-tab-bar">
+          <button
+            className={`rq-tab${activeTab === 'escalations' ? ' rq-tab-active-esc' : ''}`}
+            onClick={() => setActiveTab('escalations')}
+          >
+            Confidence Escalations
+            <span className="rq-tab-badge rq-tab-badge-esc">{items.length}</span>
+          </button>
+          <button
+            className={`rq-tab${activeTab === 'finetune' ? ' rq-tab-active-ft' : ''}`}
+            onClick={() => setActiveTab('finetune')}
+          >
+            Fine-tune Approvals
+            {ftPendingCount !== null && (
+              <span className="rq-tab-badge rq-tab-badge-ft">{ftPendingCount}</span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'escalations' ? (
+          <>
         {bannerVisible && (
           <div className="sla-banner">
             <span className="sla-banner-icon">⚠</span>
@@ -229,6 +253,10 @@ export function ReviewQueue() {
             )}
           </div>
         </div>
+          </>
+        ) : (
+          <FineTuneTab onCountChange={setFtPendingCount} />
+        )}
       </div>
     </div>
   );
