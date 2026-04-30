@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/tokens.css';
+import { REVIEWER } from '../constants/identity';
 
 const NAV_ROUTES: Partial<Record<string, string>> = {
   dashboard:    '/dashboard',
@@ -224,10 +225,10 @@ export function Sidebar({ activeId = 'dashboard', onNavigate, extraNav }: Sideba
       <div style={styles.footer}>
         <div style={styles.divider} />
         <div style={styles.userRow}>
-          <div style={styles.avatar}>M</div>
+          <div style={styles.avatar}>{REVIEWER.name[0]}</div>
           <div style={styles.userInfo}>
-            <span style={styles.userName}>Max</span>
-            <span style={styles.userMeta}>Admin · v0.1.0</span>
+            <span style={styles.userName}>{REVIEWER.name}</span>
+            <span style={styles.userMeta}>{REVIEWER.role} · v0.1.0</span>
           </div>
         </div>
       </div>
