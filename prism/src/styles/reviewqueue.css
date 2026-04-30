@@ -513,10 +513,8 @@
   font-size: 12px;
   font-weight: 500;
   color: var(--t3);
+  border: none;
   border-bottom: 2px solid transparent;
-  border-top: none;
-  border-left: none;
-  border-right: none;
   background: none;
   font-family: var(--sans);
   cursor: pointer;
@@ -587,7 +585,7 @@
 }
 
 .ft-agent-name {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -626,14 +624,14 @@
 }
 
 .ft-stat-value {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--t1);
 }
 
 .ft-trigger {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--t2);
   line-height: 1.5;
 }
@@ -656,7 +654,7 @@
 
 .btn-orion-fill {
   background: var(--orion);
-  color: #fff;
+  color: var(--bg);
   border: 1px solid var(--orion);
   font-family: var(--sans);
   font-size: 11px;
@@ -734,7 +732,7 @@
   padding: 8px 16px;
   border-top: 1px solid var(--b1);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--red);
   background: rgba(255, 77, 106, 0.04);
   display: flex;
