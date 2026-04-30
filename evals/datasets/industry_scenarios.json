@@ -1,0 +1,469 @@
+{
+  "sources": [
+    {
+      "domain": "finance",
+      "standard": "Nacha ACH",
+      "url": "https://achdevguide.nacha.org/ach-file-overview"
+    },
+    {
+      "domain": "health",
+      "standard": "HL7 FHIR Patient and Observation",
+      "url": "https://www.hl7.org/fhir/patient.html"
+    },
+    {
+      "domain": "hospitality",
+      "standard": "OpenTravel Messaging",
+      "url": "https://opentravel.org/opentravel-messaging-business-functionality/"
+    },
+    {
+      "domain": "retail",
+      "standard": "GS1 GTIN / Barcode Standards",
+      "url": "https://www.gs1.org/standards/barcodes"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "finance_ach_payroll",
+      "domain": "finance",
+      "title": "Finance ACH Payroll Export",
+      "raw_requirements": "Finance ACH Payroll Export\\n1. The system must generate a balanced NACHA-style payroll file for approved payroll runs.\\n2. Each payroll batch must include company id, effective date, employee routing number, employee account number, and credit amount.\\n3. The export must reject payroll runs with missing routing numbers or negative amounts.\\n4. If file totals do not reconcile, the batch must fail before release.\\n5. Re-running the same payroll run must not create duplicate employee payments.",
+      "analysis_output": {
+        "requirements": [
+          {
+            "req_id": "FIN-REQ-001",
+            "title": "Generate ACH payroll file",
+            "description": "Generate a balanced payroll export with required payment fields.",
+            "category": "functional",
+            "priority": "critical",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          },
+          {
+            "req_id": "FIN-REQ-002",
+            "title": "Reject invalid payroll rows",
+            "description": "Reject rows with missing routing numbers or negative credit amounts.",
+            "category": "functional",
+            "priority": "critical",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          },
+          {
+            "req_id": "FIN-REQ-003",
+            "title": "Prevent duplicate payouts",
+            "description": "Repeat export attempts for the same run must not create duplicate payments.",
+            "category": "edge_case",
+            "priority": "high",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          }
+        ],
+        "total_count": 3,
+        "ambiguous_count": 0,
+        "untestable_count": 0,
+        "summary": "Payroll ACH export requires valid payment rows, reconciled totals, and duplicate prevention."
+      },
+      "test_design_output": {
+        "test_cases": [
+          {
+            "tc_id": "FIN-TC-001",
+            "req_id": "FIN-REQ-001",
+            "title": "Generate balanced payroll file",
+            "preconditions": ["Approved payroll run exists", "All employee banking details are present"],
+            "steps": ["Open payroll export", "Generate ACH file"],
+            "expected_result": "A balanced export is generated with company and employee payment details.",
+            "test_type": "positive",
+            "priority": "critical",
+            "automated": true
+          },
+          {
+            "tc_id": "FIN-TC-002",
+            "req_id": "FIN-REQ-002",
+            "title": "Reject negative payroll amount",
+            "preconditions": ["Approved payroll run contains a negative payment row"],
+            "steps": ["Generate ACH file"],
+            "expected_result": "The batch is rejected before release and the invalid employee row is reported.",
+            "test_type": "negative",
+            "priority": "critical",
+            "automated": true
+          },
+          {
+            "tc_id": "FIN-TC-003",
+            "req_id": "FIN-REQ-003",
+            "title": "Do not duplicate re-run payroll export",
+            "preconditions": ["An ACH export already exists for the payroll run"],
+            "steps": ["Trigger the export for the same payroll run again"],
+            "expected_result": "The system reuses or blocks the duplicate export and does not create duplicate payouts.",
+            "test_type": "edge_case",
+            "priority": "high",
+            "automated": true
+          }
+        ],
+        "total_count": 3,
+        "coverage_summary": {
+          "FIN-REQ-001": 1,
+          "FIN-REQ-002": 1,
+          "FIN-REQ-003": 1
+        },
+        "uncovered_reqs": []
+      },
+      "test_results": [
+        {"tc_id": "FIN-TC-001", "status": "pass"},
+        {"tc_id": "FIN-TC-002", "status": "fail", "actual_result": "Batch released with negative amount", "error_log": "validation skipped"},
+        {"tc_id": "FIN-TC-003", "status": "pass"}
+      ],
+      "bug_report_output": {
+        "bug_reports": [
+          {
+            "bug_id": "FIN-BUG-001",
+            "tc_id": "FIN-TC-002",
+            "req_id": "FIN-REQ-002",
+            "title": "Negative payroll amounts are exported",
+            "severity": "critical",
+            "description": "The export allows negative credit rows to pass validation and release.",
+            "steps_to_reproduce": ["Prepare a payroll row with a negative amount", "Generate the ACH export"],
+            "expected": "The batch should fail before release.",
+            "actual": "The batch is released with an invalid negative row.",
+            "suggested_fix": "Validate routing and amount constraints before batch assembly.",
+            "rigel_handoff": true
+          }
+        ],
+        "total_bugs": 1,
+        "critical_count": 1,
+        "rigel_handoffs": ["FIN-BUG-001"],
+        "pass_rate": 0.6667
+      }
+    },
+    {
+      "id": "health_fhir_intake",
+      "domain": "health",
+      "title": "Health FHIR Intake Validation",
+      "raw_requirements": "Health FHIR Intake Validation\\n1. The intake API must require a patient identifier, legal name, and date of birth before creating a patient record.\\n2. Observations must capture code, effective timestamp, value, and units when the observation is quantitative.\\n3. Requests missing mandatory demographic data must be rejected with a validation error.\\n4. Protected health information must never be written to debug logs.",
+      "analysis_output": {
+        "requirements": [
+          {
+            "req_id": "HLTH-REQ-001",
+            "title": "Require patient demographics",
+            "description": "Patient intake requires identifier, name, and date of birth.",
+            "category": "functional",
+            "priority": "critical",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          },
+          {
+            "req_id": "HLTH-REQ-002",
+            "title": "Validate quantitative observations",
+            "description": "Quantitative observations require code, timestamp, value, and units.",
+            "category": "functional",
+            "priority": "high",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          },
+          {
+            "req_id": "HLTH-REQ-003",
+            "title": "Do not log PHI",
+            "description": "Sensitive demographics must not be emitted to debug logs.",
+            "category": "non_functional",
+            "priority": "critical",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          }
+        ],
+        "total_count": 3,
+        "ambiguous_count": 0,
+        "untestable_count": 0,
+        "summary": "FHIR-style intake requires demographic validation, structured observations, and PHI-safe logging."
+      },
+      "test_design_output": {
+        "test_cases": [
+          {
+            "tc_id": "HLTH-TC-001",
+            "req_id": "HLTH-REQ-001",
+            "title": "Reject patient intake missing DOB",
+            "preconditions": ["Patient request is missing date of birth"],
+            "steps": ["POST patient intake request"],
+            "expected_result": "The request is rejected with a validation error.",
+            "test_type": "negative",
+            "priority": "critical",
+            "automated": true
+          },
+          {
+            "tc_id": "HLTH-TC-002",
+            "req_id": "HLTH-REQ-002",
+            "title": "Persist quantitative observation with units",
+            "preconditions": ["Observation includes code, timestamp, value, and units"],
+            "steps": ["POST observation payload"],
+            "expected_result": "Observation is accepted and persisted.",
+            "test_type": "positive",
+            "priority": "high",
+            "automated": true
+          },
+          {
+            "tc_id": "HLTH-TC-003",
+            "req_id": "HLTH-REQ-003",
+            "title": "Debug logs omit PHI",
+            "preconditions": ["Debug logging is enabled"],
+            "steps": ["POST patient intake request"],
+            "expected_result": "Sensitive demographics are redacted or omitted from logs.",
+            "test_type": "edge_case",
+            "priority": "critical",
+            "automated": true
+          }
+        ],
+        "total_count": 3,
+        "coverage_summary": {
+          "HLTH-REQ-001": 1,
+          "HLTH-REQ-002": 1,
+          "HLTH-REQ-003": 1
+        },
+        "uncovered_reqs": []
+      },
+      "test_results": [
+        {"tc_id": "HLTH-TC-001", "status": "pass"},
+        {"tc_id": "HLTH-TC-002", "status": "pass"},
+        {"tc_id": "HLTH-TC-003", "status": "fail", "actual_result": "Patient SSN appeared in debug log", "error_log": "logger.debug(payload)"}
+      ],
+      "bug_report_output": {
+        "bug_reports": [
+          {
+            "bug_id": "HLTH-BUG-001",
+            "tc_id": "HLTH-TC-003",
+            "req_id": "HLTH-REQ-003",
+            "title": "PHI leaks into debug logging",
+            "severity": "critical",
+            "description": "The intake path logs patient demographics without redaction.",
+            "steps_to_reproduce": ["Enable debug logging", "Submit a patient intake payload"],
+            "expected": "Sensitive fields should be redacted or omitted.",
+            "actual": "Sensitive patient data is written to logs.",
+            "suggested_fix": "Redact PHI fields before structured logging.",
+            "rigel_handoff": true
+          }
+        ],
+        "total_bugs": 1,
+        "critical_count": 1,
+        "rigel_handoffs": ["HLTH-BUG-001"],
+        "pass_rate": 0.6667
+      }
+    },
+    {
+      "id": "hospitality_booking",
+      "domain": "hospitality",
+      "title": "Hospitality Reservation Workflow",
+      "raw_requirements": "Hospitality Reservation Workflow\\n1. The booking API must return room availability before accepting a reservation.\\n2. Reservations must include property id, room type, stay dates, guest count, and rate plan.\\n3. Duplicate booking submits with the same idempotency key must not create duplicate reservations.\\n4. A failed payment authorization must prevent the reservation from being confirmed.",
+      "analysis_output": {
+        "requirements": [
+          {
+            "req_id": "HOTEL-REQ-001",
+            "title": "Check availability before booking",
+            "description": "Booking confirmation requires inventory availability.",
+            "category": "functional",
+            "priority": "critical",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          },
+          {
+            "req_id": "HOTEL-REQ-002",
+            "title": "Require reservation details",
+            "description": "Reservations require property, room, dates, guest count, and rate plan.",
+            "category": "functional",
+            "priority": "high",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          },
+          {
+            "req_id": "HOTEL-REQ-003",
+            "title": "Block duplicate confirmation",
+            "description": "Repeated submits with the same idempotency key must not create duplicate reservations.",
+            "category": "edge_case",
+            "priority": "high",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          }
+        ],
+        "total_count": 3,
+        "ambiguous_count": 0,
+        "untestable_count": 0,
+        "summary": "Reservation workflow requires availability, complete booking data, and duplicate prevention."
+      },
+      "test_design_output": {
+        "test_cases": [
+          {
+            "tc_id": "HOTEL-TC-001",
+            "req_id": "HOTEL-REQ-001",
+            "title": "Confirm only available room inventory",
+            "preconditions": ["Inventory exists for requested stay dates"],
+            "steps": ["Search availability", "Submit booking request"],
+            "expected_result": "Reservation is confirmed only when inventory exists.",
+            "test_type": "positive",
+            "priority": "critical",
+            "automated": true
+          },
+          {
+            "tc_id": "HOTEL-TC-002",
+            "req_id": "HOTEL-REQ-002",
+            "title": "Reject booking missing rate plan",
+            "preconditions": ["Booking request omits rate plan"],
+            "steps": ["Submit booking request"],
+            "expected_result": "Reservation request is rejected with validation details.",
+            "test_type": "negative",
+            "priority": "high",
+            "automated": true
+          },
+          {
+            "tc_id": "HOTEL-TC-003",
+            "req_id": "HOTEL-REQ-003",
+            "title": "Deduplicate repeated booking submit",
+            "preconditions": ["A reservation already exists for the idempotency key"],
+            "steps": ["Submit booking request with the same idempotency key"],
+            "expected_result": "No duplicate reservation is created.",
+            "test_type": "edge_case",
+            "priority": "high",
+            "automated": true
+          }
+        ],
+        "total_count": 3,
+        "coverage_summary": {
+          "HOTEL-REQ-001": 1,
+          "HOTEL-REQ-002": 1,
+          "HOTEL-REQ-003": 1
+        },
+        "uncovered_reqs": []
+      },
+      "test_results": [
+        {"tc_id": "HOTEL-TC-001", "status": "pass"},
+        {"tc_id": "HOTEL-TC-002", "status": "pass"},
+        {"tc_id": "HOTEL-TC-003", "status": "fail", "actual_result": "Two reservations were confirmed for the same key", "error_log": "duplicate submit created second reservation"}
+      ],
+      "bug_report_output": {
+        "bug_reports": [
+          {
+            "bug_id": "HOTEL-BUG-001",
+            "tc_id": "HOTEL-TC-003",
+            "req_id": "HOTEL-REQ-003",
+            "title": "Duplicate reservation created on idempotent retry",
+            "severity": "critical",
+            "description": "The booking flow confirms a second reservation for the same idempotency key.",
+            "steps_to_reproduce": ["Submit a reservation", "Retry the same request with the same idempotency key"],
+            "expected": "The request should return the original reservation or block the retry.",
+            "actual": "A second reservation is confirmed.",
+            "suggested_fix": "Persist and check idempotency keys before confirmation.",
+            "rigel_handoff": true
+          }
+        ],
+        "total_bugs": 1,
+        "critical_count": 1,
+        "rigel_handoffs": ["HOTEL-BUG-001"],
+        "pass_rate": 0.6667
+      }
+    },
+    {
+      "id": "retail_gtin_catalog",
+      "domain": "retail",
+      "title": "Retail GTIN Catalog Sync",
+      "raw_requirements": "Retail GTIN Catalog Sync\\n1. Each product must carry a unique GTIN before publication.\\n2. The catalog importer must reject duplicate GTINs in a single import batch.\\n3. Inventory labels must preserve barcode and batch metadata for downstream fulfillment.\\n4. Invalid GTIN lengths must be rejected before publication.",
+      "analysis_output": {
+        "requirements": [
+          {
+            "req_id": "RTL-REQ-001",
+            "title": "Require unique GTIN",
+            "description": "Products need a unique GTIN before publication.",
+            "category": "functional",
+            "priority": "critical",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          },
+          {
+            "req_id": "RTL-REQ-002",
+            "title": "Reject duplicate GTINs",
+            "description": "Importer must reject duplicate GTINs in the same batch.",
+            "category": "functional",
+            "priority": "high",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          },
+          {
+            "req_id": "RTL-REQ-003",
+            "title": "Reject invalid GTIN length",
+            "description": "Importer must fail records with invalid GTIN length before publication.",
+            "category": "edge_case",
+            "priority": "high",
+            "testable": true,
+            "ambiguity_flag": false,
+            "ambiguity_note": null
+          }
+        ],
+        "total_count": 3,
+        "ambiguous_count": 0,
+        "untestable_count": 0,
+        "summary": "Catalog sync requires unique and valid GTINs plus preserved fulfillment metadata."
+      },
+      "test_design_output": {
+        "test_cases": [
+          {
+            "tc_id": "RTL-TC-001",
+            "req_id": "RTL-REQ-001",
+            "title": "Publish product with unique GTIN",
+            "preconditions": ["Incoming product has a unique GTIN"],
+            "steps": ["Run import"],
+            "expected_result": "Product is published with barcode metadata preserved.",
+            "test_type": "positive",
+            "priority": "critical",
+            "automated": true
+          },
+          {
+            "tc_id": "RTL-TC-002",
+            "req_id": "RTL-REQ-002",
+            "title": "Reject duplicate GTIN batch",
+            "preconditions": ["Import batch contains the same GTIN twice"],
+            "steps": ["Run import"],
+            "expected_result": "Batch fails with duplicate GTIN error.",
+            "test_type": "negative",
+            "priority": "high",
+            "automated": true
+          },
+          {
+            "tc_id": "RTL-TC-003",
+            "req_id": "RTL-REQ-003",
+            "title": "Reject short GTIN",
+            "preconditions": ["Incoming GTIN is shorter than expected"],
+            "steps": ["Run import"],
+            "expected_result": "Record is rejected before publication.",
+            "test_type": "edge_case",
+            "priority": "high",
+            "automated": true
+          }
+        ],
+        "total_count": 3,
+        "coverage_summary": {
+          "RTL-REQ-001": 1,
+          "RTL-REQ-002": 1,
+          "RTL-REQ-003": 1
+        },
+        "uncovered_reqs": []
+      },
+      "test_results": [
+        {"tc_id": "RTL-TC-001", "status": "pass"},
+        {"tc_id": "RTL-TC-002", "status": "pass"},
+        {"tc_id": "RTL-TC-003", "status": "pass"}
+      ],
+      "bug_report_output": {
+        "bug_reports": [],
+        "total_bugs": 0,
+        "critical_count": 0,
+        "rigel_handoffs": [],
+        "pass_rate": 1.0
+      }
+    }
+  ]
+}
+

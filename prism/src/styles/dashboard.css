@@ -1,0 +1,474 @@
+/* ─────────────────────────────────────────────────────────────
+   GALAXZ — Dashboard Styles
+   ───────────────────────────────────────────────────────────── */
+
+/* ── Review banner ───────────────────────────────────────────── */
+
+.review-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(245, 192, 64, 0.06);
+  border: 1px solid rgba(245, 192, 64, 0.18);
+  border-radius: 7px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.review-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-banner-title {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--yellow);
+  line-height: 1.4;
+}
+
+.review-banner-sub {
+  font-size: 11px;
+  color: var(--t2);
+  margin-top: 1px;
+}
+
+.btn-open-review {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 11px;
+  border-radius: 5px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(245, 192, 64, 0.12);
+  border: 1px solid rgba(245, 192, 64, 0.2);
+  color: var(--yellow);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-open-review:hover {
+  background: rgba(245, 192, 64, 0.18);
+  border-color: rgba(245, 192, 64, 0.32);
+}
+
+/* ── Metrics strip ───────────────────────────────────────────── */
+
+.metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.metric-card {
+  background: var(--bg1);
+  border: 1px solid var(--b1);
+  border-radius: 8px;
+  padding: 16px 18px;
+  transition: border-color 0.12s ease;
+  cursor: default;
+}
+
+.metric-card:hover { border-color: var(--b2); }
+
+.metric-value {
+  font-family: var(--mono);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  display: block;
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+
+.metric-label {
+  font-size: 11px;
+  color: var(--t3);
+  margin-bottom: 5px;
+  display: block;
+}
+
+.metric-delta {
+  font-family: var(--mono);
+  font-size: 11px;
+  display: block;
+}
+
+/* ── Main dashboard grid ─────────────────────────────────────── */
+
+.dash-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 12px;
+  align-items: start;
+}
+
+.dash-left-col,
+.dash-right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Bar chart ───────────────────────────────────────────────── */
+
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  height: 80px;
+  gap: 3px;
+}
+
+.bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  background: rgba(79, 142, 255, 0.18);
+  transition: background 0.12s ease;
+  cursor: default;
+  min-width: 0;
+}
+
+.bar:hover  { background: rgba(79, 142, 255, 0.45) !important; }
+.bar.peak   { background: rgba(79, 142, 255, 0.35); }
+
+.chart-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding: 0 1px;
+}
+
+.chart-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--t4);
+}
+
+/* ── Agent health rows ───────────────────────────────────────── */
+
+.agent-health-body {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 0 0 8px 8px;
+}
+
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--b1);
+  transition: background 0.1s ease;
+}
+
+.agent-row:last-child { border-bottom: none; }
+.agent-row:hover      { background: rgba(255, 255, 255, 0.012); }
+
+.agent-glow {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agent-row-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 90px;
+  flex-shrink: 0;
+}
+
+.agent-row-status {
+  font-size: 11px;
+  min-width: 52px;
+  flex-shrink: 0;
+}
+
+.agent-row-spacer { flex: 1; min-width: 8px; }
+
+.agent-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 58px;
+  flex-shrink: 0;
+}
+
+.agent-stat-val {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t2);
+  line-height: 1.25;
+}
+
+.agent-stat-lbl {
+  font-size: 9.5px;
+  color: var(--t4);
+  line-height: 1.25;
+}
+
+/* ── Live task feed ──────────────────────────────────────────── */
+
+.task-feed-body {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 0 0 8px 8px;
+}
+
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--b1);
+  transition: background 0.1s ease;
+  cursor: default;
+}
+
+.task-row:last-child { border-bottom: none; }
+.task-row:hover      { background: rgba(255, 255, 255, 0.015); }
+
+.task-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.task-skill {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t2);
+  min-width: 192px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-spacer { flex: 1; min-width: 4px; }
+
+.task-conf-track {
+  width: 48px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg3);
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.task-conf-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.task-conf-val {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  min-width: 32px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.task-time {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--t4);
+  min-width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── System health rows ──────────────────────────────────────── */
+
+.system-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--b1);
+}
+
+.system-row:last-child { border-bottom: none; }
+
+.system-glow {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.system-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 84px;
+  flex-shrink: 0;
+}
+
+.system-desc {
+  font-size: 11px;
+  color: var(--t3);
+  flex: 1;
+}
+
+.system-ping {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  min-width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Event timeline ──────────────────────────────────────────── */
+
+.event-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--b1);
+}
+
+.event-row:last-child { border-bottom: none; }
+
+.event-time {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--t4);
+  min-width: 48px;
+  padding-top: 1px;
+  flex-shrink: 0;
+}
+
+.event-sym {
+  font-size: 10px;
+  padding-top: 1px;
+  flex-shrink: 0;
+  line-height: 1.55;
+}
+
+.event-text {
+  font-size: 11px;
+  color: var(--t2);
+  line-height: 1.55;
+}
+
+.event-bold {
+  color: var(--t1);
+  font-weight: 600;
+}
+
+/* ── Orion empty state ───────────────────────────────────────── */
+
+.orion-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 12px 24px;
+  gap: 7px;
+  text-align: center;
+}
+
+.orion-empty-icon {
+  font-size: 28px;
+  line-height: 1;
+  margin-bottom: 2px;
+  opacity: 0.5;
+}
+
+.orion-empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--t2);
+}
+
+.orion-empty-desc {
+  font-size: 12px;
+  color: var(--t3);
+  line-height: 1.6;
+  max-width: 220px;
+}
+
+.orion-phase-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 10px;
+  background: rgba(255, 107, 157, 0.08);
+  border: 1px solid rgba(255, 107, 157, 0.18);
+  border-radius: 10px;
+  color: rgba(255, 107, 157, 0.7);
+  margin-top: 4px;
+  display: inline-block;
+}
+
+/* ── Topbar extras ───────────────────────────────────────────── */
+
+.dash-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--bg2);
+  border: 1px solid var(--b1);
+  border-radius: 5px;
+  color: var(--t3);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+  min-width: 148px;
+}
+
+.dash-search:hover {
+  border-color: var(--b2);
+  color: var(--t2);
+}
+
+.dash-search-label {
+  flex: 1;
+  text-align: left;
+  color: var(--t3);
+}
+
+.dash-search-kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--b2);
+  border-radius: 3px;
+  background: var(--bg3);
+  color: var(--t4);
+}
+
+.notif-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.notif-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  border: 1.5px solid var(--bg1);
+  pointer-events: none;
+}

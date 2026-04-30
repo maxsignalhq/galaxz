@@ -1,0 +1,14 @@
+# Pulsar storage backend configuration.
+# Both 'sqlite' and 'postgres' are supported backends.
+#
+# To switch to Postgres:
+#   1. Set backend: postgres
+#   2. Set PULSAR_POSTGRES_DSN env var (or edit postgres_dsn below)
+#   3. Restart Pulsar — agents re-register on boot, no data migration needed
+#      (registry state is rebuilt from agent boot-time registration)
+
+backend: sqlite
+sqlite_path: data/pulsar.db
+
+# Postgres connection string — only read when backend is 'postgres'
+postgres_dsn: ${PULSAR_POSTGRES_DSN}

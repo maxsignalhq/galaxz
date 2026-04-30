@@ -1,0 +1,419 @@
+/* ─────────────────────────────────────────────────────────────
+   GALAXZ — Orion Analytics Styles
+   ───────────────────────────────────────────────────────────── */
+
+/* ── Phase 3 banner ──────────────────────────────────────────── */
+
+.phase3-banner {
+  background: rgba(255, 107, 157, 0.05);
+  border: 1px solid rgba(255, 107, 157, 0.14);
+  border-radius: 8px;
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.phase3-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.phase3-text { flex: 1; min-width: 0; }
+
+.phase3-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--orion);
+  margin-bottom: 4px;
+}
+
+.phase3-sub {
+  font-size: 12px;
+  color: var(--t3);
+  line-height: 1.6;
+}
+
+.phase3-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 5px;
+  background: rgba(255, 107, 157, 0.10);
+  border: 1px solid rgba(255, 107, 157, 0.20);
+  color: var(--orion);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ── Metrics strip ───────────────────────────────────────────── */
+
+.oa-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.oa-metric-card {
+  background: var(--bg1);
+  border: 1px solid var(--b1);
+  border-radius: 7px;
+  padding: 12px 14px;
+}
+
+.oa-metric-label {
+  font-size: 10.5px;
+  color: var(--t3);
+  margin-bottom: 8px;
+}
+
+.oa-metric-value {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.oa-metric-delta {
+  font-size: 10.5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Grid rows ───────────────────────────────────────────────── */
+
+.oa-row {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.oa-row-2 { grid-template-columns: 1fr 1fr; }
+.oa-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+/* ── Cards ───────────────────────────────────────────────────── */
+
+.oa-card {
+  background: var(--bg1);
+  border: 1px solid var(--b1);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.oa-card.orion-border {
+  border-color: rgba(255, 107, 157, 0.12);
+}
+
+.oa-card-head {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--b1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.oa-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--t2);
+}
+
+.oa-card-title.orion { color: rgba(255, 107, 157, 0.7); }
+.oa-card-title.green { color: var(--green); }
+.oa-card-title.teal  { color: var(--teal);  }
+
+.oa-card-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--t3);
+}
+
+.oa-card-body {
+  padding: 14px 16px;
+  flex: 1;
+}
+
+/* ── Feedback volume card ────────────────────────────────────── */
+
+.fv-trend-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.fv-stat { display: flex; flex-direction: column; gap: 4px; }
+
+.fv-stat-value {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.fv-stat-label {
+  font-size: 10px;
+  color: var(--t3);
+}
+
+/* Bar chart */
+.fv-chart-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fv-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 80px;
+}
+
+.fv-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  background: rgba(255, 107, 157, 0.14);
+  transition: background 0.1s ease;
+  min-height: 2px;
+}
+
+.fv-bar.peak { background: rgba(255, 107, 157, 0.28); }
+.fv-bar:hover { background: rgba(255, 107, 157, 0.40) !important; }
+
+.fv-xaxis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--t4);
+  padding: 0 1px;
+}
+
+/* ── Empty states ────────────────────────────────────────────── */
+
+.oa-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 20px;
+  text-align: center;
+  gap: 10px;
+}
+
+.oa-empty-icon {
+  font-size: 32px;
+  opacity: 0.45;
+  line-height: 1;
+}
+
+.oa-empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--t2);
+}
+
+.oa-empty-text {
+  font-size: 11.5px;
+  color: var(--t3);
+  line-height: 1.65;
+  max-width: 300px;
+}
+
+.oa-empty-badge {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 2px 9px;
+  border-radius: 5px;
+  background: rgba(255, 107, 157, 0.08);
+  border: 1px solid rgba(255, 107, 157, 0.18);
+  color: var(--orion);
+}
+
+/* compact empty (for smaller cards) */
+.oa-empty.compact { padding: 20px 16px; }
+.oa-empty.compact .oa-empty-icon { font-size: 24px; }
+
+/* ── Drift monitor ───────────────────────────────────────────── */
+
+.drift-rows { display: flex; flex-direction: column; }
+
+.drift-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--b1);
+}
+
+.drift-row:last-child { border-bottom: none; }
+
+.drift-agent {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.drift-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg3);
+  position: relative;
+  overflow: hidden;
+}
+
+.drift-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--green);
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.drift-sigma {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t2);
+  min-width: 40px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.drift-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.drift-badge-clean  { background: rgba(0, 212, 160, 0.08); color: var(--green); }
+.drift-badge-drift  { background: rgba(245, 192, 64, 0.08); color: var(--yellow); }
+
+.oa-card-footer {
+  font-size: 11px;
+  color: var(--t4);
+  line-height: 1.6;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--b1);
+}
+
+/* ── Aether stream status ────────────────────────────────────── */
+
+.stream-rows { display: flex; flex-direction: column; }
+
+.stream-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--b1);
+}
+
+.stream-row:last-child { border-bottom: none; }
+
+.stream-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.stream-dot-green  { background: var(--green);  box-shadow: 0 0 5px var(--green); }
+.stream-dot-yellow { background: var(--yellow); box-shadow: 0 0 4px var(--yellow); }
+.stream-dot-teal   { background: var(--teal);   box-shadow: 0 0 4px var(--teal); }
+.stream-dot-muted  { background: var(--t4); }
+
+.stream-key {
+  font-size: 12px;
+  color: var(--t2);
+  min-width: 130px;
+  flex-shrink: 0;
+}
+
+.stream-val {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t2);
+  margin-left: auto;
+  text-align: right;
+}
+
+/* ── Agent performance (row 3) ───────────────────────────────── */
+
+.oa-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--b1);
+}
+
+.oa-agent-cell {
+  background: var(--bg1);
+  padding: 16px 20px;
+}
+
+.oa-agent-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+
+.oa-agent-stat-big {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--t1);
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.oa-agent-stat-label {
+  font-size: 10px;
+  color: var(--t3);
+  margin-bottom: 8px;
+}
+
+.oa-agent-stat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.oa-agent-secondary {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--t2);
+  line-height: 1;
+}
+
+.oa-agent-secondary-label {
+  font-size: 10px;
+  color: var(--t3);
+}
+
+.oa-agent-note {
+  font-size: 10.5px;
+  color: var(--t4);
+  line-height: 1.55;
+}

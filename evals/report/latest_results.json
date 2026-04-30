@@ -1,0 +1,172 @@
+{
+  "started_at": "2026-04-27T23:34:20.406974+00:00",
+  "completed_at": "2026-04-27T23:34:20.497289+00:00",
+  "duration_seconds": 0.09,
+  "dataset_sources": [
+    {
+      "domain": "finance",
+      "standard": "Nacha ACH",
+      "url": "https://achdevguide.nacha.org/ach-file-overview"
+    },
+    {
+      "domain": "health",
+      "standard": "HL7 FHIR Patient and Observation",
+      "url": "https://www.hl7.org/fhir/patient.html"
+    },
+    {
+      "domain": "hospitality",
+      "standard": "OpenTravel Messaging",
+      "url": "https://opentravel.org/opentravel-messaging-business-functionality/"
+    },
+    {
+      "domain": "retail",
+      "standard": "GS1 GTIN / Barcode Standards",
+      "url": "https://www.gs1.org/standards/barcodes"
+    }
+  ],
+  "scenario_count": 4,
+  "passed": 8,
+  "failed": 0,
+  "results": [
+    {
+      "suite": "contracts_registry",
+      "status": "passed",
+      "checks": [
+        "TaskContract creation and validation",
+        "Pulsar registration for Vega and Rigel",
+        "Skill lookup for QA and engineering paths"
+      ],
+      "warnings": [],
+      "artifacts": {},
+      "error": null
+    },
+    {
+      "suite": "vega_pipeline",
+      "status": "passed",
+      "checks": [
+        "Finance Vega flow",
+        "Health Vega flow",
+        "Hospitality Vega flow",
+        "Retail Vega flow"
+      ],
+      "warnings": [],
+      "artifacts": {
+        "finance_ach_payroll": {
+          "run_id": "f145da87-eb31-47fa-b617-acbce24a43b8",
+          "feedback_stream": "galaxz.feedback.vega",
+          "bugs": 1
+        },
+        "health_fhir_intake": {
+          "run_id": "a3426185-f71d-47c0-a89b-490fbc333b7b",
+          "feedback_stream": "galaxz.feedback.vega",
+          "bugs": 1
+        },
+        "hospitality_booking": {
+          "run_id": "6ae70950-f3d6-4ed1-9d52-d8b4194e4dbe",
+          "feedback_stream": "galaxz.feedback.vega",
+          "bugs": 1
+        },
+        "retail_gtin_catalog": {
+          "run_id": "464b1db9-8396-4b74-8248-76658c4927eb",
+          "feedback_stream": "galaxz.feedback.vega",
+          "bugs": 0
+        }
+      },
+      "error": null
+    },
+    {
+      "suite": "rigel_skills",
+      "status": "passed",
+      "checks": [
+        "Code generation with execution calibration",
+        "Test writing",
+        "PR review",
+        "Debug triage",
+        "Refactor",
+        "Scaffold"
+      ],
+      "warnings": [],
+      "artifacts": {
+        "feedback_events": 6,
+        "codegen_confidence": 0.988
+      },
+      "error": null
+    },
+    {
+      "suite": "andromeda_routing",
+      "status": "passed",
+      "checks": [
+        "Vega routing",
+        "Rigel routing",
+        "No-match routing",
+        "Task log persistence"
+      ],
+      "warnings": [],
+      "artifacts": {
+        "vega_task_id": "e889dea8-d1e9-4506-8ab8-6d148c7b247f",
+        "rigel_task_id": "9623f2e9-1a5b-46a7-ba20-c3a13195b93b"
+      },
+      "error": null
+    },
+    {
+      "suite": "cli_surface",
+      "status": "passed",
+      "checks": [
+        "CLI Vega command",
+        "CLI route command"
+      ],
+      "warnings": [],
+      "artifacts": {},
+      "error": null
+    },
+    {
+      "suite": "api_surface",
+      "status": "passed",
+      "checks": [
+        "FastAPI health endpoint",
+        "FastAPI bearer auth for write endpoints",
+        "FastAPI task routing endpoint",
+        "FastAPI status endpoint",
+        "FastAPI review queue approve/reject endpoints",
+        "FastAPI fine-tune queue approve/reject endpoints"
+      ],
+      "warnings": [],
+      "artifacts": {},
+      "error": null
+    },
+    {
+      "suite": "orion_pipeline",
+      "status": "passed",
+      "checks": [
+        "Direct Orion ingest for accepted and rejected feedback",
+        "Dataset curation cycle",
+        "Heuristic cycle with routing, drift, and fine-tune signals"
+      ],
+      "warnings": [],
+      "artifacts": {
+        "heuristic_streams": [
+          "aether:orion.drift_alert",
+          "aether:orion.fine_tune_ready",
+          "aether:routing.heuristic_update"
+        ],
+        "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-eo56ce_s/datasets"
+      },
+      "error": null
+    },
+    {
+      "suite": "feedback_handshake",
+      "status": "passed",
+      "checks": [
+        "Andromeda to Vega execution",
+        "Andromeda to Rigel execution",
+        "Agent feedback payload compatibility with Orion ingest"
+      ],
+      "warnings": [],
+      "artifacts": {
+        "feedback_events": 2,
+        "eligible_ingests": 2
+      },
+      "error": null
+    }
+  ]
+}

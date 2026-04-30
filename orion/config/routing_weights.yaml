@@ -1,0 +1,15 @@
+version: 0
+source: seed
+updated_at: null
+cold_start_threshold: 50
+
+weights:
+  qa.test_generation:         { vega: 1.0, rigel: 0.0 }
+  qa.regression:              { vega: 1.0, rigel: 0.0 }
+  qa.bug_reporting:           { vega: 1.0, rigel: 0.0 }
+  rigel.skill.code_generation:{ vega: 0.0, rigel: 1.0 }
+  rigel.skill.pr_review:      { vega: 0.0, rigel: 1.0 }
+  rigel.skill.test_writing:   { vega: 0.2, rigel: 0.8 }
+  rigel.skill.refactor:       { vega: 0.0, rigel: 1.0 }
+  rigel.skill.scaffold:       { vega: 0.0, rigel: 1.0 }
+  rigel.skill.debug_triage:   { vega: 0.0, rigel: 1.0 }

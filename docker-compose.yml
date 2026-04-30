@@ -1,0 +1,91 @@
+services:
+  aether:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  pulsar:
+    build: .
+    image: galaxz:latest
+    depends_on:
+      - aether
+    env_file:
+      - .env
+    volumes:
+      - ./config:/app/config
+    ports:
+      - "8003:8003"
+    command: python -u services/pulsar_service.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  vega:
+    build: .
+    image: galaxz:latest
+    depends_on:
+      - aether
+      - pulsar
+    env_file:
+      - .env
+    volumes:
+      - ./config:/app/config
+    ports:
+      - "8080:8080"
+    command: python -u services/vega_service.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  rigel:
+    build: .
+    image: galaxz:latest
+    depends_on:
+      - aether
+      - pulsar
+    env_file:
+      - .env
+    environment:
+      RIGEL_CONFIDENCE_COMPLETION_THRESHOLD: "0.65"
+      RIGEL_CONFIDENCE_FAILURE_THRESHOLD: "0.40"
+      RIGEL_CONFIDENCE_PARSE_ERROR_FALLBACK: "0.75"
+    volumes:
+      - ./config:/app/config
+    ports:
+      - "8002:8002"
+    command: python -u services/rigel_service.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  galaxz:
+    build: .
+    image: galaxz:latest
+    depends_on:
+      - aether
+      - pulsar
+    env_file:
+      - .env
+    environment:
+      RIGEL_CONFIDENCE_COMPLETION_THRESHOLD: "0.65"
+      RIGEL_CONFIDENCE_FAILURE_THRESHOLD: "0.40"
+      RIGEL_CONFIDENCE_PARSE_ERROR_FALLBACK: "0.75"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./config:/app/config
+      - ./orion/config:/app/orion/config
+      - ./orion/data:/app/orion/data
+    command: python -u services/andromeda_service.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

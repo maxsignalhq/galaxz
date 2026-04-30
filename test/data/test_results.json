@@ -1,0 +1,9 @@
+{
+  "test_run_id": "run-local-001",
+  "results": [
+    { "test_id": "TC-001", "status": "passed" },
+    { "test_id": "TC-002", "status": "failed", "actual": "HTTP 200 returned instead of 400 for password too short" },
+    { "test_id": "TC-003", "status": "failed", "actual": "Account not locked after 5 consecutive failed attempts" },
+    { "test_id": "TC-004", "status": "passed" }
+  ]
+}
