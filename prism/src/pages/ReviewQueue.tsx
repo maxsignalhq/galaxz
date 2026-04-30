@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Sidebar } from '../components/Sidebar';
+import { timeAgo } from '../utils/time';
 import '../styles/tokens.css';
 import '../styles/reviewqueue.css';
 
@@ -15,15 +16,6 @@ interface QueueItem {
 
 function formatConfidence(value: number | null) {
   return typeof value === 'number' ? value.toFixed(2) : '—';
-}
-
-function timeAgo(iso: string) {
-  const ms = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return '—';
-  const secs = Math.floor(ms / 1000);
-  if (secs < 60) return `${secs}s ago`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-  return `${Math.floor(secs / 3600)}h ago`;
 }
 
 function slaClass(confidence: number | null): 'sla-urgent' | 'sla-warn' | 'sla-ok' {
