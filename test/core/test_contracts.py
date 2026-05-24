@@ -93,3 +93,25 @@ def test_validate_feedback_event_rejects_skill_manifest_mismatch():
 
     with pytest.raises(ValueError, match="not registered"):
         validate_feedback_event(event, manifest)
+
+
+def test_task_contract_workspace_root_defaults_to_none():
+    task = TaskContract(
+        origin="test",
+        skill="foo.bar",
+        payload={"x": 1},
+        confidence_threshold=0.7,
+    )
+    assert task.workspace_root is None
+
+
+def test_task_contract_workspace_root_round_trips():
+    task = TaskContract(
+        origin="test",
+        skill="foo.bar",
+        payload={"x": 1},
+        confidence_threshold=0.7,
+        workspace_root="/Users/dev/my-project",
+    )
+    restored = TaskContract.model_validate_json(task.model_dump_json())
+    assert restored.workspace_root == "/Users/dev/my-project"
