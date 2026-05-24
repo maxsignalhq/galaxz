@@ -52,6 +52,18 @@ def test_load_workspace_config_enabled_but_missing_path_raises(tmp_path):
         load_workspace_config(str(config_file))
 
 
+# ── Test 3c ─────────────────────────────────────────────────────────────────
+def test_load_workspace_config_enabled_but_path_is_file_raises(tmp_path):
+    a_file = tmp_path / "somefile.txt"
+    a_file.write_text("content")
+
+    config_file = tmp_path / "workspace.yaml"
+    config_file.write_text(f"workspace_root: '{a_file}'\nenabled: true\n")
+
+    with pytest.raises(ValueError, match="workspace_root does not exist or is not a directory"):
+        load_workspace_config(str(config_file))
+
+
 # ── Missing file ─────────────────────────────────────────────────────────────
 def test_load_workspace_config_missing_file_returns_disabled_default(tmp_path):
     cfg = load_workspace_config(str(tmp_path / "no_such_file.yaml"))
