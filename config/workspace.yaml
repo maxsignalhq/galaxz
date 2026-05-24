@@ -1,0 +1,2 @@
+workspace_root: ""  # absolute path to the developer's project, e.g. /Users/max/Projects/weather-app
+enabled: false       # workspace mode is opt-in; false = previous behaviour preserved
