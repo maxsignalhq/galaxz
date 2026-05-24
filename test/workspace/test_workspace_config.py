@@ -82,7 +82,11 @@ _SKILL_ID = "workspace.test.skill"
 
 
 class _MockAgent:
+    def __init__(self):
+        self.received_context: dict | None = None
+
     def run(self, skill_id, payload, context=None):
+        self.received_context = context
         return {"confidence": 0.9, "result": {"ok": True}}
 
 
@@ -118,7 +122,8 @@ def test_andromeda_route_injects_workspace_root_into_context(tmp_path, monkeypat
     task_log = TaskLog(db_path=str(tmp_path / "andromeda_tasks.db"))
     _register_mock_agent(registry)
 
-    andromeda = Andromeda(registry, task_log, agents={"mock": _MockAgent()})
+    mock_agent = _MockAgent()
+    andromeda = Andromeda(registry, task_log, agents={"mock": mock_agent})
     result = andromeda.route(
         task_type="workspace_test",
         required_skills=[_SKILL_ID],
@@ -127,6 +132,9 @@ def test_andromeda_route_injects_workspace_root_into_context(tmp_path, monkeypat
 
     assert result["status"] == "complete"
     assert result["context"]["workspace_root"] == ws_path
+    # verify workspace_root actually reached the agent's run() call
+    assert mock_agent.received_context is not None
+    assert mock_agent.received_context.get("workspace_root") == ws_path
 
 
 def test_andromeda_route_does_not_inject_when_workspace_disabled(tmp_path, monkeypatch):
@@ -139,7 +147,8 @@ def test_andromeda_route_does_not_inject_when_workspace_disabled(tmp_path, monke
     task_log = TaskLog(db_path=str(tmp_path / "andromeda_tasks.db"))
     _register_mock_agent(registry)
 
-    andromeda = Andromeda(registry, task_log, agents={"mock": _MockAgent()})
+    mock_agent = _MockAgent()
+    andromeda = Andromeda(registry, task_log, agents={"mock": mock_agent})
     result = andromeda.route(
         task_type="workspace_test",
         required_skills=[_SKILL_ID],
