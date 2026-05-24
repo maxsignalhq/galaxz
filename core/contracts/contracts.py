@@ -56,7 +56,6 @@ class SkillManifest(BaseModel):
     health_endpoint: str
     registered_at: datetime = Field(default_factory=utc_now)
     heartbeat_interval_s: int = Field(default=30, ge=1)
-    metadata: dict = Field(default_factory=dict)
 
     @field_validator("agent_id", "agent_name", "version", "health_endpoint")
     @classmethod
