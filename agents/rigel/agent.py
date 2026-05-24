@@ -1,6 +1,9 @@
 import logging
 import uuid
+from pathlib import Path
 from typing import Callable, Optional
+
+import yaml
 
 from agents.rigel.confidence import score_confidence
 from agents.rigel.config import RigelConfig
@@ -10,9 +13,26 @@ from core.aether.client import get_aether_client
 from core.contracts import RefineryFeedbackEvent, SkillDefinition, SkillManifest
 from core.llm.provider import ProviderConfig, call_llm, load_provider_config
 from core.pulsar.registry import PulsarRegistry
+from workspace.file_writer import FileWriter
+
+_RIGEL_YAML = Path("config/rigel.yaml")
 
 
 import re as _re
+
+_DESCRIPTION_KEYS: dict[str, str] = {
+    "code_generation": "spec",
+    "test_writing": "code",
+    "refactor": "refactor_intent",
+    "scaffold": "project_type",
+    "debug_triage": "error_trace",
+    "pr_review": "diff",
+}
+
+
+def _task_description(skill_id: str, payload: dict) -> str:
+    skill = skill_id.split(".")[-1]
+    return payload.get(_DESCRIPTION_KEYS.get(skill, ""), "")
 
 logger = logging.getLogger(__name__)
 FEEDBACK_STREAM = "galaxz.feedback.rigel"
@@ -139,7 +159,24 @@ class RigelAgent:
         self.llm = _make_llm_client(config)
         self.registry = registry
         self.config = rigel_config or RigelConfig()
+        self._active_skills = self._load_active_skills()
         self._register_manifest()
+
+    def _load_active_skills(self) -> list[dict]:
+        if _RIGEL_YAML.exists():
+            with open(_RIGEL_YAML, encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            enabled = {
+                f"rigel.skill.{name}"
+                for name, cfg in data.get("skills", {}).items()
+                if cfg.get("enabled", True)
+            }
+            active = [s for s in self.SKILLS if s["skill_id"] in enabled]
+        else:
+            logger.warning("config/rigel.yaml not found — using default confidence thresholds")
+            active = list(self.SKILLS)
+        logger.info("Rigel loaded %d skills from config/rigel.yaml", len(active))
+        return active
 
     def _register_manifest(self) -> None:
         self.registry.register(self._build_manifest())
@@ -158,7 +195,7 @@ class RigelAgent:
                     avg_confidence=skill_def["avg_confidence"],
                     avg_latency_ms=skill_def["avg_latency_ms"],
                 )
-                for skill_def in self.SKILLS
+                for skill_def in self._active_skills
             ],
             health_endpoint=self.HEALTH_ENDPOINT,
             heartbeat_interval_s=30,
@@ -193,6 +230,10 @@ class RigelAgent:
             parse_error_fallback=self.config.confidence_parse_error_fallback,
         )
 
+        skill_name = skill_id.split(".")[-1]
+        normalized = _normalize_skill_output(skill_name, raw_result)
+        skill_confidence = raw_result.pop("confidence", None)
+
         task_result = {
             **raw_result,
             "confidence": confidence_data["confidence"],
@@ -210,7 +251,25 @@ class RigelAgent:
                 else None
             ),
             "externally_calibrated": externally_calibrated,
+            "artifacts": normalized["artifacts"],
+            "summary": normalized["summary"],
+            "writable": normalized["writable"],
+            **({"skill_confidence": skill_confidence} if skill_confidence is not None else {}),
         }
+
+        written_artifacts = []
+        if context and context.get("workspace_root") and normalized["writable"]:
+            writer = FileWriter(context["workspace_root"])
+            for artifact in normalized["artifacts"]:
+                if len(normalized["artifacts"]) == 1:
+                    filename = context.get("output_path") or writer.infer_filename(
+                        _task_description(skill_id, payload), skill_id.split(".")[-1]
+                    )
+                else:
+                    filename = artifact["filename"]
+                wa = writer.write(filename, artifact["content"])
+                written_artifacts.append(wa.model_dump(mode="python"))
+        task_result["written_artifacts"] = written_artifacts
 
         self._emit_feedback(
             task_id=context.get("task_id") if context else None,
@@ -255,6 +314,103 @@ class RigelAgent:
             logger.warning("Rigel feedback emit failed: %s", exc)
         finally:
             aether.close()
+
+
+_EXT_TO_LANGUAGE: dict[str, str] = {
+    ".py": "python",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".go": "go",
+    ".rs": "rust",
+    ".java": "java",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".json": "json",
+    ".md": "markdown",
+    ".sh": "bash",
+    ".html": "html",
+    ".css": "css",
+}
+
+
+def _infer_language(filename: str) -> str:
+    ext = Path(filename).suffix.lower()
+    return _EXT_TO_LANGUAGE.get(ext, "text")
+
+
+def _normalize_skill_output(skill_name: str, raw_result: dict) -> dict:
+    if skill_name == "code_generation":
+        return {
+            "artifacts": [{
+                "filename": "output.py",
+                "content": raw_result["code"],
+                "language": raw_result.get("language", "python"),
+                "artifact_type": "code",
+            }],
+            "summary": raw_result.get("notes", ""),
+            "writable": True,
+        }
+    if skill_name == "refactor":
+        return {
+            "artifacts": [{
+                "filename": "refactored.py",
+                "content": raw_result["refactored_code"],
+                "language": "python",
+                "artifact_type": "code",
+            }],
+            "summary": raw_result.get("changes_made", ""),
+            "writable": True,
+        }
+    if skill_name == "scaffold":
+        return {
+            "artifacts": [
+                {
+                    "filename": f["path"],
+                    "content": f["content"],
+                    "language": _infer_language(f["path"]),
+                    "artifact_type": "code",
+                }
+                for f in raw_result.get("files", [])
+            ],
+            "summary": raw_result.get("instructions", ""),
+            "writable": True,
+        }
+    if skill_name == "test_writing":
+        return {
+            "artifacts": [{
+                "filename": "test_output.py",
+                "content": raw_result["tests"],
+                "language": raw_result.get("test_framework", "pytest"),
+                "artifact_type": "tests",
+            }],
+            "summary": f"{raw_result.get('test_count', '?')} tests generated",
+            "writable": True,
+        }
+    if skill_name == "debug_triage":
+        return {
+            "artifacts": [{
+                "filename": "debug_report.md",
+                "content": raw_result.get("suggested_fix_approach", ""),
+                "language": "markdown",
+                "artifact_type": "report",
+            }],
+            "summary": raw_result.get("root_cause_hypothesis", ""),
+            "writable": False,
+        }
+    if skill_name == "pr_review":
+        return {
+            "artifacts": [{
+                "filename": "review.md",
+                "content": raw_result.get("findings", ""),
+                "language": "markdown",
+                "artifact_type": "report",
+            }],
+            "summary": raw_result.get("summary", ""),
+            "writable": False,
+        }
+    raise ValueError(f"Unknown skill name: {skill_name!r}")
 
 
 def _feedback_outcome(execution_result) -> str:
