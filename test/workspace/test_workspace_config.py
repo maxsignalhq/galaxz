@@ -4,6 +4,10 @@ import textwrap
 import pytest
 
 from workspace.config import WorkspaceConfig, load_workspace_config
+from agents.andromeda.orchestrator import Andromeda
+from agents.andromeda.task_log import TaskLog
+from core.contracts import SkillDefinition, SkillManifest
+from core.pulsar.registry import PulsarRegistry
 
 
 # ── Test 1 ──────────────────────────────────────────────────────────────────
@@ -70,3 +74,56 @@ def test_load_workspace_config_missing_file_returns_disabled_default(tmp_path):
 
     assert cfg.enabled is False
     assert cfg.workspace_root == ""
+
+
+# ── Test 4: Andromeda route injects workspace_root into context ───────────────
+
+_SKILL_ID = "workspace.test.skill"
+
+
+class _MockAgent:
+    def run(self, skill_id, payload, context=None):
+        return {"confidence": 0.9, "result": {"ok": True}}
+
+
+def _register_mock_agent(registry: PulsarRegistry) -> None:
+    registry.register(
+        SkillManifest(
+            agent_id="mock",
+            agent_name="Mock Agent",
+            version="0.1.0",
+            health_endpoint="http://mock:8080/health",
+            skills=[
+                SkillDefinition(
+                    skill_id=_SKILL_ID,
+                    description="Mock skill for workspace injection tests.",
+                    input_schema={"type": "object"},
+                    output_schema={"type": "object"},
+                )
+            ],
+        )
+    )
+
+
+def test_andromeda_route_injects_workspace_root_into_context(tmp_path, monkeypatch):
+    ws_path = str(tmp_path / "my-project")
+    os.makedirs(ws_path)
+
+    monkeypatch.setattr(
+        "agents.andromeda.orchestrator.load_workspace_config",
+        lambda: WorkspaceConfig(workspace_root=ws_path, enabled=True),
+    )
+
+    registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
+    task_log = TaskLog(db_path=str(tmp_path / "andromeda_tasks.db"))
+    _register_mock_agent(registry)
+
+    andromeda = Andromeda(registry, task_log, agents={"mock": _MockAgent()})
+    result = andromeda.route(
+        task_type="workspace_test",
+        required_skills=[_SKILL_ID],
+        payload={"x": 1},
+    )
+
+    assert result["status"] == "complete"
+    assert result["context"]["workspace_root"] == ws_path

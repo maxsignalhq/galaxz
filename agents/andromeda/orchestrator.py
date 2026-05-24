@@ -23,6 +23,7 @@ from agents.vega.agent import VegaAgent
 from core.contracts import TaskContract
 from core.pulsar.registry import PulsarRegistry
 from orion.core.weights_loader import RoutingWeightsLoader
+from workspace.config import load_workspace_config
 
 
 logger = logging.getLogger(__name__)
@@ -258,9 +259,14 @@ class Andromeda:
 
             return {
                 "result": result.get("result", result),
+                "artifacts": result.get("artifacts", []),
+                "writable": result.get("writable", False),
+                "summary": result.get("summary", ""),
                 "confidence": result.get("confidence", 0.80),
-                "confidence_breakdown": result.get("confidence_breakdown"),
+                "confidence_breakdown": result.get("confidence_breakdown", {}),
                 "gaps": result.get("gaps", []),
+                "execution_result": result.get("execution_result", None),
+                "externally_calibrated": result.get("externally_calibrated", False),
                 "status": "complete",
             }
         except Exception as e:
@@ -292,6 +298,11 @@ class Andromeda:
                 confidence_threshold=0.65,
             )
 
+        ws = load_workspace_config()
+        if ws.enabled:
+            task = task.model_copy(update={"workspace_root": ws.workspace_root})
+            context = {**(context or {}), "workspace_root": ws.workspace_root}
+
         task_type = task_type or task.skill.split(".")[-1]
         required_skills = required_skills or [task.skill]
         initial_state = AndromedaState(
@@ -311,6 +322,15 @@ class Andromeda:
         validated_state = AndromedaState.model_validate(final_state)
         self.task_log.write(validated_state)
         result = validated_state.model_dump(mode="python")
+        # LangGraph drops unknown fields during state merge (AndromedaState has extra="forbid").
+        # The full agent output is preserved in AndromedaState.result — lift passthrough fields
+        # from there so they appear at the top level of the route() return dict.
+        skill_output = result.get("result") if isinstance(result.get("result"), dict) else {}
+        result["artifacts"] = skill_output.get("artifacts", [])
+        result["writable"] = skill_output.get("writable", False)
+        result["summary"] = skill_output.get("summary", "")
+        result["execution_result"] = skill_output.get("execution_result")
+        result["externally_calibrated"] = skill_output.get("externally_calibrated", False)
         if validated_state.status == "escalated":
             sla_deadline = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
             self.review_queue.enqueue(
