@@ -115,3 +115,25 @@ def test_task_contract_workspace_root_round_trips():
     )
     restored = TaskContract.model_validate_json(task.model_dump_json())
     assert restored.workspace_root == "/Users/dev/my-project"
+
+
+def test_task_contract_output_path_defaults_to_none():
+    task = TaskContract(
+        origin="test",
+        skill="foo.bar",
+        payload={"x": 1},
+        confidence_threshold=0.7,
+    )
+    assert task.output_path is None
+
+
+def test_task_contract_output_path_round_trips():
+    task = TaskContract(
+        origin="test",
+        skill="foo.bar",
+        payload={"x": 1},
+        confidence_threshold=0.7,
+        output_path="src/weather.py",
+    )
+    restored = TaskContract.model_validate_json(task.model_dump_json())
+    assert restored.output_path == "src/weather.py"

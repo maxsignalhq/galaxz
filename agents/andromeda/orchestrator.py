@@ -302,7 +302,10 @@ class Andromeda:
         ws = self._workspace_config
         if ws.enabled:
             task = task.model_copy(update={"workspace_root": ws.workspace_root})
-            context = {**(context or {}), "workspace_root": ws.workspace_root}
+            context_update = {"workspace_root": ws.workspace_root}
+            if task.output_path is not None:
+                context_update["output_path"] = task.output_path
+            context = {**(context or {}), **context_update}
 
         task_type = task_type or task.skill.split(".")[-1]
         required_skills = required_skills or [task.skill]

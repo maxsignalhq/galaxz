@@ -20,6 +20,7 @@ class TaskContract(BaseModel):
     confidence_threshold: float = Field(ge=0.0, le=1.0)
     deadline_ms: int | None = Field(default=None, ge=0)
     workspace_root: str | None = None  # set by Andromeda from WorkspaceConfig; None when workspace is disabled
+    output_path: str | None = None     # caller-specified filename; threaded to context when workspace is enabled
     created_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("origin", "skill")

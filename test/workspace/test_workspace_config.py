@@ -157,3 +157,34 @@ def test_andromeda_route_does_not_inject_when_workspace_disabled(tmp_path, monke
 
     assert result["status"] == "complete"
     assert "workspace_root" not in result["context"]
+
+
+def test_andromeda_route_threads_output_path_into_context(tmp_path, monkeypatch):
+    ws_path = str(tmp_path / "my-project")
+    os.makedirs(ws_path)
+
+    monkeypatch.setattr(
+        "agents.andromeda.orchestrator.load_workspace_config",
+        lambda: WorkspaceConfig(workspace_root=ws_path, enabled=True),
+    )
+
+    registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
+    task_log = TaskLog(db_path=str(tmp_path / "andromeda_tasks.db"))
+    _register_mock_agent(registry)
+
+    mock_agent = _MockAgent()
+    andromeda = Andromeda(registry, task_log, agents={"mock": mock_agent})
+
+    from core.contracts import TaskContract
+    task = TaskContract(
+        origin="test",
+        skill=_SKILL_ID,
+        payload={"x": 1},
+        confidence_threshold=0.65,
+        output_path="src/weather.py",
+    )
+    result = andromeda.route(task=task)
+
+    assert result["status"] == "complete"
+    assert result["context"]["output_path"] == "src/weather.py"
+    assert mock_agent.received_context.get("output_path") == "src/weather.py"
