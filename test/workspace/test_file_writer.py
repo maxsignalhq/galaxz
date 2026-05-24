@@ -36,3 +36,9 @@ def test_infer_filename_empty_description_returns_fallback(tmp_path):
     result = writer.infer_filename("", "test_writing")
 
     assert result == "output_test_writing.py"
+
+
+def test_write_rejects_path_traversal(tmp_path):
+    writer = FileWriter(str(tmp_path))
+    with pytest.raises(ValueError, match="escapes workspace root"):
+        writer.write("../../etc/passwd", "x")

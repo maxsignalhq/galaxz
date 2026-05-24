@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 _STOP_WORDS = {
     "a", "an", "the", "to", "for", "of", "in", "on", "at",
@@ -16,7 +16,7 @@ class WrittenArtifact(BaseModel):
     filename: str
     absolute_path: str
     relative_path: str
-    size_bytes: int
+    size_bytes: int = Field(ge=0)
 
 
 class FileWriter:
@@ -24,7 +24,9 @@ class FileWriter:
         self._root = Path(workspace_root)
 
     def write(self, filename: str, content: str) -> WrittenArtifact:
-        full_path = self._root / filename
+        full_path = (self._root / filename).resolve()
+        if not full_path.is_relative_to(self._root.resolve()):
+            raise ValueError(f"filename escapes workspace root: {filename!r}")
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
         return WrittenArtifact(
@@ -42,7 +44,7 @@ class FileWriter:
             if w not in _STOP_WORDS
         ]
         filtered = [w for w in filtered if w]
-        slug = "_".join(filtered)[:40]
+        slug = "_".join(filtered)[:40].rstrip("_")
 
         if not slug:
             return f"output_{skill}.py"
