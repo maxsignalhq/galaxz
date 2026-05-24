@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from uuid import uuid4
 import pytest
 from agents.rigel.agent import RigelAgent
@@ -29,7 +30,6 @@ def test_rigel_writes_artifact_to_disk_when_workspace_root_set(rigel, tmp_path):
     assert len(result["written_artifacts"]) >= 1
     wa = result["written_artifacts"][0]
     assert wa["absolute_path"]
-    from pathlib import Path
     assert Path(wa["absolute_path"]).exists()
     # in-memory artifacts unchanged
     assert len(result["artifacts"]) >= 1
