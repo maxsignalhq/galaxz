@@ -154,6 +154,7 @@ class Andromeda:
         self.task_log = task_log
         self.review_queue = review_queue or ReviewQueue()
         self.routing_weights = RoutingWeightsLoader(str(ROUTING_WEIGHTS_PATH))
+        self._workspace_config = load_workspace_config()
         self._routing_weights_stop = threading.Event()
         self._agents = agents or {
             "rigel": RigelAgent(registry),
@@ -298,7 +299,7 @@ class Andromeda:
                 confidence_threshold=0.65,
             )
 
-        ws = load_workspace_config()
+        ws = self._workspace_config
         if ws.enabled:
             task = task.model_copy(update={"workspace_root": ws.workspace_root})
             context = {**(context or {}), "workspace_root": ws.workspace_root}

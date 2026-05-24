@@ -3,11 +3,11 @@ import textwrap
 
 import pytest
 
-from workspace.config import WorkspaceConfig, load_workspace_config
 from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.task_log import TaskLog
 from core.contracts import SkillDefinition, SkillManifest
 from core.pulsar.registry import PulsarRegistry
+from workspace.config import WorkspaceConfig, load_workspace_config
 
 
 # ── Test 1 ──────────────────────────────────────────────────────────────────
@@ -127,3 +127,24 @@ def test_andromeda_route_injects_workspace_root_into_context(tmp_path, monkeypat
 
     assert result["status"] == "complete"
     assert result["context"]["workspace_root"] == ws_path
+
+
+def test_andromeda_route_does_not_inject_when_workspace_disabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "agents.andromeda.orchestrator.load_workspace_config",
+        lambda: WorkspaceConfig(workspace_root="", enabled=False),
+    )
+
+    registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
+    task_log = TaskLog(db_path=str(tmp_path / "andromeda_tasks.db"))
+    _register_mock_agent(registry)
+
+    andromeda = Andromeda(registry, task_log, agents={"mock": _MockAgent()})
+    result = andromeda.route(
+        task_type="workspace_test",
+        required_skills=[_SKILL_ID],
+        payload={"x": 1},
+    )
+
+    assert result["status"] == "complete"
+    assert "workspace_root" not in result["context"]
