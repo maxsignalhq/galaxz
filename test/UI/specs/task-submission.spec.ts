@@ -394,3 +394,134 @@ test.describe('Task UI functional flows against the live backend', () => {
     await expect(outcome).toContainText(`rigel · ${RIGEL_PR_REVIEW}`);
   });
 });
+
+test.describe('Workspace execution UI', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => {
+      window.localStorage.removeItem('galaxz.taskUi.session');
+    });
+    await page.goto('/task-ui');
+  });
+
+  test('shows WorkspaceBanner when artifacts present and no workspace configured', async ({ page }) => {
+    await page.route('**/api/task', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          task_id: 'mock-workspace-task',
+          task_type: 'code_generation',
+          required_skills: ['rigel.skill.code_generation'],
+          assigned_agent: 'rigel',
+          status: 'complete',
+          confidence: 0.88,
+          confidence_breakdown: null,
+          gaps: [],
+          failure_reason: null,
+          escalated_to_human: false,
+          issued_at: '2026-05-25T00:00:00Z',
+          completed_at: '2026-05-25T00:00:01Z',
+          result: { code: 'x = 1', language: 'python', notes: '' },
+          workspace_path: null,
+          artifacts: [
+            {
+              filename: 'output.py',
+              content: 'x = 1',
+              language: 'python',
+              artifact_type: 'code',
+              written: false,
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.getByPlaceholder('Describe what you need — ⌘Enter to send').fill('Generate a validator');
+    await page.getByRole('button', { name: /Send/ }).click();
+
+    await expect(page.getByText('No workspace configured')).toBeVisible();
+    await expect(page.getByText('Not saved')).toBeVisible();
+  });
+
+  test('shows saved path and no banner when workspace configured and artifact written', async ({ page }) => {
+    await page.route('**/api/task', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          task_id: 'mock-workspace-task',
+          task_type: 'code_generation',
+          required_skills: ['rigel.skill.code_generation'],
+          assigned_agent: 'rigel',
+          status: 'complete',
+          confidence: 0.88,
+          confidence_breakdown: null,
+          gaps: [],
+          failure_reason: null,
+          escalated_to_human: false,
+          issued_at: '2026-05-25T00:00:00Z',
+          completed_at: '2026-05-25T00:00:01Z',
+          result: { code: 'x = 1', language: 'python', notes: '' },
+          workspace_path: '/my/project',
+          artifacts: [
+            {
+              filename: 'output.py',
+              content: 'x = 1',
+              language: 'python',
+              artifact_type: 'code',
+              written: true,
+              path: '/my/project/output.py',
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.getByPlaceholder('Describe what you need — ⌘Enter to send').fill('Generate a validator');
+    await page.getByRole('button', { name: /Send/ }).click();
+
+    await expect(page.getByText('No workspace configured')).not.toBeVisible();
+    await expect(page.getByText('✓ Saved to disk')).toBeVisible();
+  });
+
+  test('shows Not saved when workspace configured but artifact not written', async ({ page }) => {
+    await page.route('**/api/task', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          task_id: 'mock-workspace-task',
+          task_type: 'code_generation',
+          required_skills: ['rigel.skill.code_generation'],
+          assigned_agent: 'rigel',
+          status: 'complete',
+          confidence: 0.88,
+          confidence_breakdown: null,
+          gaps: [],
+          failure_reason: null,
+          escalated_to_human: false,
+          issued_at: '2026-05-25T00:00:00Z',
+          completed_at: '2026-05-25T00:00:01Z',
+          result: { code: 'x = 1', language: 'python', notes: '' },
+          workspace_path: '/my/project',
+          artifacts: [
+            {
+              filename: 'output.py',
+              content: 'x = 1',
+              language: 'python',
+              artifact_type: 'code',
+              written: false,
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.getByPlaceholder('Describe what you need — ⌘Enter to send').fill('Generate a validator');
+    await page.getByRole('button', { name: /Send/ }).click();
+
+    await expect(page.getByText('Not saved')).toBeVisible();
+    await expect(page.getByText('No workspace configured')).not.toBeVisible();
+  });
+});

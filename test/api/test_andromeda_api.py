@@ -301,3 +301,107 @@ def test_task_endpoint_returns_500_when_router_fails(monkeypatch):
 
     assert response.status_code == 500
     assert response.json()["detail"] == "route failed"
+
+
+# --- Workspace execution tests ---
+
+
+class WorkspaceAwareFakeAndromeda(FakeAndromeda):
+    def route(self, **kwargs) -> dict:
+        result = super().route(**kwargs)
+        result["execution_result"] = {
+            "executed_from": "workspace",
+            "outcome": "pass",
+            "exit_code": 0,
+            "stdout": "",
+            "stderr": "",
+            "duration_ms": 42,
+        }
+        return result
+
+
+class SandboxAwareFakeAndromeda(FakeAndromeda):
+    def route(self, **kwargs) -> dict:
+        result = super().route(**kwargs)
+        result["execution_result"] = {
+            "executed_from": "sandbox",
+            "outcome": "pass",
+            "exit_code": 0,
+            "stdout": "",
+            "stderr": "",
+            "duration_ms": 10,
+        }
+        return result
+
+
+class ArtifactFakeAndromeda(FakeAndromeda):
+    def route(self, **kwargs) -> dict:
+        result = super().route(**kwargs)
+        result["artifacts"] = [
+            {
+                "filename": "output.py",
+                "content": "x = 1",
+                "language": "python",
+                "artifact_type": "code",
+            }
+        ]
+        result["writable"] = True
+        return result
+
+
+def test_task_response_includes_execution_result_with_executed_from_workspace(monkeypatch):
+    _reset_auth(monkeypatch)
+    fake = WorkspaceAwareFakeAndromeda()
+    monkeypatch.setattr(andromeda_service, "boot", lambda: fake)
+    monkeypatch.setattr(andromeda_service, "_read_workspace_path", lambda: "")
+
+    with TestClient(andromeda_service.app) as client:
+        response = client.post(
+            "/task",
+            json={"task": "Generate a validator", "skill_id": "code_generation"},
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "execution_result" in body
+    assert body["execution_result"]["executed_from"] == "workspace"
+
+
+def test_task_response_execution_result_sandbox_mode(monkeypatch):
+    _reset_auth(monkeypatch)
+    fake = SandboxAwareFakeAndromeda()
+    monkeypatch.setattr(andromeda_service, "boot", lambda: fake)
+    monkeypatch.setattr(andromeda_service, "_read_workspace_path", lambda: "")
+
+    with TestClient(andromeda_service.app) as client:
+        response = client.post(
+            "/task",
+            json={"task": "Generate a validator", "skill_id": "code_generation"},
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "execution_result" in body
+    assert body["execution_result"]["executed_from"] == "sandbox"
+
+
+def test_task_response_workspace_path_null_when_not_configured(monkeypatch):
+    _reset_auth(monkeypatch)
+    fake = ArtifactFakeAndromeda()
+    monkeypatch.setattr(andromeda_service, "boot", lambda: fake)
+    monkeypatch.setattr(andromeda_service, "_read_workspace_path", lambda: "")
+
+    with TestClient(andromeda_service.app) as client:
+        response = client.post(
+            "/task",
+            json={"task": "Generate a validator", "skill_id": "code_generation"},
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["workspace_path"] is None
+    assert len(body["artifacts"]) >= 1
+    assert body["artifacts"][0]["written"] is False
