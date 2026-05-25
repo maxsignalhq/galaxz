@@ -36,6 +36,7 @@ memory/*.txt
 # Claude tooling
 .superpowers/
 .claude/settings.local.json
+docs/superpowers/
 
 # IDE
 .idea/
