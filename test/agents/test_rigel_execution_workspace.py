@@ -16,15 +16,12 @@ def test_no_workspace_root_uses_sandbox(monkeypatch):
 
     result = execute_generated_output(
         skill_id="rigel.skill.code_generation",
-        payload={},
-        result={"code": "x=1"},
+        payload={"tests": "def test_x(): assert 1 == 1"},
+        result={"code": "x = 1", "language": "python"},
         workspace_root=None,
     )
-    # _build_execution_files returns None when tests key is absent, so result is None.
-    # The sandbox path short-circuits before subprocess when files is None.
-    # executed_from check only makes sense when a result is returned.
-    # When files is None the function returns None — assert that and skip executed_from.
-    assert result is None or result.executed_from == "sandbox"
+    assert result is not None
+    assert result.executed_from == "sandbox"
 
 
 def test_workspace_root_real_file_passes(tmp_path):
