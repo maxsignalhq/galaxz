@@ -71,3 +71,17 @@ def test_workspace_root_set_no_file_path_returns_none():
         file_path=None,
     )
     assert result is None
+
+
+def test_workspace_nonexistent_file_returns_error(tmp_path):
+    """workspace_root set + file_path does not exist → outcome="fail"."""
+    result = execute_generated_output(
+        skill_id="rigel.skill.code_generation",
+        payload={"tests": "def test_x(): assert 1 == 1"},
+        result={"code": "x = 1", "language": "python"},
+        workspace_root=str(tmp_path),
+        file_path=str(tmp_path / "nonexistent.py"),
+    )
+    assert result is not None
+    assert result.outcome == "fail"
+    assert result.executed_from == "workspace"
