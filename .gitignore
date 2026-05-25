@@ -37,6 +37,8 @@ memory/*.txt
 .superpowers/
 .claude/settings.local.json
 docs/superpowers/
+CLAUDE.md
+AGENTS.md
 
 # IDE
 .idea/
