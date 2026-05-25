@@ -1,7 +1,4 @@
 import subprocess
-from pathlib import Path
-
-import pytest
 
 from agents.rigel.execution import execute_generated_output
 
@@ -22,6 +19,7 @@ def test_no_workspace_root_uses_sandbox(monkeypatch):
     )
     assert result is not None
     assert result.executed_from == "sandbox"
+    assert result.outcome == "pass"
 
 
 def test_workspace_root_real_file_passes(tmp_path):
@@ -48,6 +46,7 @@ def test_workspace_timeout(tmp_path):
     script = tmp_path / "slow.py"
     script.write_text("import time; time.sleep(10)\n")
 
+    # Real subprocess — intentionally 1s budget against a 10s sleep.
     result = execute_generated_output(
         skill_id="rigel.skill.code_generation",
         payload={},
@@ -68,7 +67,7 @@ def test_workspace_root_set_no_file_path_returns_none():
         skill_id="rigel.skill.code_generation",
         payload={},
         result={"code": "x=1"},
-        workspace_root="/some/path",
+        workspace_root="/nonexistent",
         file_path=None,
     )
     assert result is None
