@@ -32,9 +32,6 @@ memory/*.txt
 .playwright-mcp/
 .pytest_cache/
 
-# Demo / report assets — track webm files, ignore everything else
-report/*
-!report/*.webm
 
 # Claude tooling
 .superpowers/

@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
 
-<video src="report/galaxz-ui-walkthrough.webm" controls width="100%"></video>
+<video src="docs/galaxz-ui-walkthrough.webm" controls width="100%"></video>
 
 ---
 
