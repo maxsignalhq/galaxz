@@ -441,3 +441,106 @@
   line-height: 1.6;
   margin-top: 6px;
 }
+
+/* ── Config info rows ────────────────────────────────────────── */
+
+.cfg-status-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid;
+  font-size: 10px;
+  font-family: var(--mono);
+  vertical-align: middle;
+}
+
+.cfg-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--b1);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.cfg-info-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--b1);
+}
+
+.cfg-info-row:last-child { border-bottom: none; }
+
+.cfg-info-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t3);
+  width: 180px;
+  flex-shrink: 0;
+}
+
+.cfg-info-value {
+  font-size: 12px;
+  color: var(--t2);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Notice block ────────────────────────────────────────────── */
+
+.cfg-notice {
+  font-size: 12px;
+  color: var(--t3);
+  line-height: 1.65;
+  background: var(--bg2);
+  border: 1px solid var(--b1);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.cfg-code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t2);
+  background: var(--bg3);
+  border: 1px solid var(--b1);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+/* ── Stat grid (Plan panel) ──────────────────────────────────── */
+
+.cfg-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.cfg-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--b1);
+  border-radius: 7px;
+}
+
+.cfg-stat-value {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.cfg-stat-label {
+  font-size: 11px;
+  color: var(--t3);
+  margin-top: 2px;
+}

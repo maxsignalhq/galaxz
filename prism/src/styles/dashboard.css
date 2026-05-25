@@ -472,3 +472,93 @@
   border: 1.5px solid var(--bg1);
   pointer-events: none;
 }
+
+/* ── Search input (open state) ────────────────────────────────── */
+
+.dash-search-input {
+  padding: 5px 10px;
+  background: var(--bg2);
+  border: 1px solid var(--purple, #9d7eff);
+  border-radius: 5px;
+  color: var(--t1);
+  font-family: var(--sans);
+  font-size: 12px;
+  min-width: 180px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.dash-search-input::placeholder {
+  color: var(--t4);
+}
+
+/* ── Notification dropdown ────────────────────────────────────── */
+
+.notif-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  background: var(--bg2);
+  border: 1px solid var(--b2);
+  border-radius: 7px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 200;
+  overflow: hidden;
+}
+
+.notif-dropdown-head {
+  padding: 10px 14px 8px;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--t3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--b1);
+}
+
+.notif-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+}
+
+.notif-item-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--yellow);
+  flex-shrink: 0;
+}
+
+.notif-item-text {
+  flex: 1;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--t2);
+}
+
+.notif-item-link {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--purple, #9d7eff);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.notif-item-link:hover {
+  color: var(--t1);
+}
+
+.notif-empty {
+  padding: 14px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--t4);
+  text-align: center;
+}

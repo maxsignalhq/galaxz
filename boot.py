@@ -5,6 +5,7 @@ from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.task_log import TaskLog
 from agents.rigel.agent import RigelAgent
 from agents.vega.agent import VegaAgent
+from core.agent_loader import load_yaml_agents
 from core.pulsar.registry import PulsarRegistry
 
 logger = logging.getLogger(__name__)
@@ -17,14 +18,16 @@ def boot() -> Andromeda:
     2. Instantiate TaskLog
     3. Instantiate RigelAgent(registry)
     4. Instantiate VegaAgent(registry) and start its heartbeat loop
-    5. Instantiate Andromeda(registry, task_log)
-    6. Return the Andromeda instance
+    5. Load YAML-defined agents (lumina, pm, etc.)
+    6. Instantiate Andromeda(registry, task_log)
+    7. Return the Andromeda instance
     """
     registry = PulsarRegistry()
     task_log = TaskLog()
     rigel = RigelAgent(registry)
     vega = VegaAgent(registry)
     vega.start()
+    yaml_agents = load_yaml_agents(registry)
     from orion import OrionService
     from orion.config import OrionConfig
     orion = OrionService(OrionConfig(), registry=registry)
@@ -39,6 +42,7 @@ def boot() -> Andromeda:
         agents={
             rigel.AGENT_ID: rigel,
             vega.AGENT_ID: vega,
+            **yaml_agents,
         },
     )
     andromeda.orion = orion
@@ -47,6 +51,6 @@ def boot() -> Andromeda:
 
 if __name__ == "__main__":
     andromeda = boot()
-    print("Galaxz Phase 2 booted.")
+    print("Galaxz booted.")
     print("Pulsar:", andromeda.registry.health_check())
     print("Rigel:", andromeda.registry.get_all_skills())

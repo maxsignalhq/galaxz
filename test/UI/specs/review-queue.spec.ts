@@ -54,3 +54,105 @@ test.describe('Review Queue — tab bar', () => {
   });
 });
 
+test.describe('Review Queue — fine-tune approvals tab', () => {
+  const candidate = {
+    candidate_id: 'cand-001',
+    agent_id: 'rigel',
+    example_count: 128,
+    quality_avg: 0.91,
+    emitted_at: '2026-05-10T05:00:00Z',
+    status: 'pending',
+    reviewed_at: null,
+    reviewed_by: null,
+    reviewer_note: null,
+  };
+
+  test('shows empty state when no candidates are pending', async ({ page }) => {
+    await page.route('**/api/review/queue', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+    );
+    await page.route('**/api/finetune/candidates', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ candidates: [] }) }),
+    );
+
+    await page.goto('/review-queue');
+    await page.locator('.rq-tab').nth(1).click();
+
+    await expect(page.locator('.ft-empty-text')).toHaveText('No fine-tune candidates pending review');
+    await expect(page.locator('.rq-tab-badge-ft')).toHaveText('0');
+  });
+
+  test('renders candidate cards and badge count', async ({ page }) => {
+    await page.route('**/api/review/queue', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+    );
+    await page.route('**/api/finetune/candidates', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ candidates: [candidate] }) }),
+    );
+
+    await page.goto('/review-queue');
+    await page.locator('.rq-tab').nth(1).click();
+
+    await expect(page.locator('.rq-tab-badge-ft')).toHaveText('1');
+    await expect(page.locator('.ft-card')).toHaveCount(1);
+    await expect(page.locator('.ft-agent-name')).toHaveText('rigel');
+    await expect(page.getByText('128')).toBeVisible();
+    await expect(page.getByText('0.91')).toBeVisible();
+    await expect(page.getByText(/Orion detected enough high-quality rigel examples/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Approve' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reject' })).toBeVisible();
+  });
+
+  test('approves a candidate with reviewer note and updates badge', async ({ page }) => {
+    let approvedBody: Record<string, unknown> | null = null;
+
+    await page.route('**/api/review/queue', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+    );
+    await page.route('**/api/finetune/candidates', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ candidates: [candidate] }) }),
+    );
+    await page.route('**/api/finetune/candidates/cand-001/approve', async (route, request) => {
+      approvedBody = request.postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'approved', candidate_id: 'cand-001' }),
+      });
+    });
+
+    await page.goto('/review-queue');
+    await page.locator('.rq-tab').nth(1).click();
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await page.getByPlaceholder(/Optional note/).fill('Approved for next supervised fine-tune.');
+    await page.getByRole('button', { name: 'Confirm Approve' }).click();
+
+    await expect(page.locator('.ft-empty-text')).toHaveText('No fine-tune candidates pending review');
+    await expect(page.locator('.rq-tab-badge-ft')).toHaveText('0');
+    expect(approvedBody).toEqual({
+      reviewed_by: 'Admin',
+      reviewer_note: 'Approved for next supervised fine-tune.',
+    });
+  });
+
+  test('rejects a candidate and surfaces API errors inline', async ({ page }) => {
+    await page.route('**/api/review/queue', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
+    );
+    await page.route('**/api/finetune/candidates', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ candidates: [candidate] }) }),
+    );
+    await page.route('**/api/finetune/candidates/cand-001/reject', route =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'write failed' }) }),
+    );
+
+    await page.goto('/review-queue');
+    await page.locator('.rq-tab').nth(1).click();
+    await page.getByRole('button', { name: 'Reject' }).click();
+    await page.getByRole('button', { name: 'Confirm Reject' }).click();
+
+    await expect(page.locator('.ft-error-inline')).toContainText('review reject HTTP 500');
+    await expect(page.locator('.ft-card')).toContainText('rigel');
+    await expect(page.locator('.rq-tab-badge-ft')).toHaveText('1');
+  });
+});

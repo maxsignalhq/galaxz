@@ -4,7 +4,7 @@ import '../styles/landing.css';
 
 /* ── Static data ───────────────────────────────────────────── */
 
-const NAV_LINKS = ['Systems', 'How it works', 'Open source', 'Docs', 'Pricing'];
+const NAV_LINKS = ['Systems', 'How it works', 'Open source', 'Docs'];
 
 const FEATURES = [
   {
@@ -41,7 +41,7 @@ const FEATURES = [
     emoji: '🔭',
     bg: 'rgba(255,107,157,0.1)',
     title: 'Orion Learning',
-    desc: 'Phase 3 — the refinery. Reads every FeedbackEvent from Aether. Builds training datasets. Routes get smarter over time.',
+    desc: 'The learning layer. Reads every FeedbackEvent from Aether. Builds training datasets. Routes get smarter over time.',
   },
 ] as const;
 
@@ -68,7 +68,7 @@ const HOW_STEPS = [
     num: '04',
     title: 'Orion learns',
     desc: 'FeedbackEvent emitted. Orion ingests the signal. System routing improves.',
-    tag: 'Phase 3',
+    tag: 'FeedbackLoop',
   },
 ] as const;
 
@@ -94,8 +94,8 @@ const AGENTS = [
   {
     id: 'vega',
     color: '#00d4a0',
-    badge: 'phase 2',
-    badgeType: 'yellow',
+    badge: 'active',
+    badgeType: 'green',
     desc: 'Quality assurance pipeline. 3-stage execution: analyzer → test_designer → bug_reporter.',
     meta: '3 stages · pipeline',
     isOrion: false,
@@ -121,7 +121,7 @@ const AGENTS = [
   {
     id: 'orion',
     color: '#ff6b9d',
-    badge: 'phase 3',
+    badge: 'building',
     badgeType: 'orion',
     desc: 'The learning layer. Passive consumer on Aether. Reads FeedbackEvents, builds training datasets.',
     meta: 'building...',
@@ -129,59 +129,11 @@ const AGENTS = [
   },
 ] as const;
 
-const PRICING = [
-  {
-    tier: 'OPEN SOURCE',
-    price: '$0',
-    period: 'forever · self-hosted',
-    features: [
-      'All agents (Andromeda, Rigel, Vega)',
-      'Aether bus + Pulsar registry',
-      'Bring your own LLM',
-      'Full source code access',
-      'Community support',
-    ],
-    cta: 'Get the code',
-    ctaVariant: 'btn btn-outline btn-lg pricing-cta',
-    featured: false,
-  },
-  {
-    tier: 'CLOUD',
-    price: '$49',
-    period: 'per seat / month',
-    features: [
-      'Everything in Open Source',
-      'Managed hosting + uptime SLA',
-      'Orion analytics (Phase 3)',
-      'Team review queue',
-      'Priority support',
-    ],
-    cta: 'Start free trial',
-    ctaVariant: 'btn btn-primary btn-lg pricing-cta',
-    featured: true,
-  },
-  {
-    tier: 'ENTERPRISE',
-    price: 'Custom',
-    period: 'volume · on-premise · SLA',
-    features: [
-      'Everything in Cloud',
-      'On-premise deployment',
-      'Custom agent certification',
-      'JEDI Refinery managed service',
-      'Dedicated support',
-    ],
-    cta: 'Talk to us',
-    ctaVariant: 'btn btn-outline btn-lg pricing-cta',
-    featured: false,
-  },
-] as const;
-
 const FOOTER_COLS = [
   { label: 'Product',     links: ['Dashboard', 'Dev Console', 'Orion Analytics', 'Changelog'] },
   { label: 'Docs',        links: ['Quickstart', 'Architecture', 'Agent API', 'Skill Contracts'] },
   { label: 'Open Source', links: ['GitHub', 'Contributing', 'Roadmap', 'MIT License'] },
-  { label: 'Company',     links: ['About', 'Blog', 'Pricing', 'Contact'] },
+  { label: 'Company',     links: ['About', 'Blog', 'Contact'] },
 ] as const;
 
 /* ── Icons ─────────────────────────────────────────────────── */
@@ -255,7 +207,7 @@ export function Landing() {
         {/* Kicker */}
         <div className="hero-kicker">
           <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)', display: 'inline-block', flexShrink: 0 }} />
-          Open Source · v0.1.0 · MIT License · Phase 2 complete
+          Open Source · v0.1.0 · MIT License
         </div>
 
         {/* Headline */}
@@ -283,7 +235,7 @@ export function Landing() {
         <div className="hero-meta">
           <span>Apache 2.0 license</span>
           <span className="hero-meta-sep" />
-          <span>Phase 2 shipped</span>
+          <span>multi-agent ready</span>
           <span className="hero-meta-sep" />
           <span>docker-compose ready</span>
         </div>
@@ -494,42 +446,6 @@ export function Landing() {
         </div>
       </div>
 
-      {/* ══ PRICING ══════════════════════════════════════════ */}
-      <div className="section-wrap">
-        <span className="section-kicker">PRICING</span>
-        <h2 className="section-h2">
-          Start free.<br />Scale when ready.
-        </h2>
-        <p className="section-sub" style={{ marginBottom: 32 }}>
-          The core is free forever. Managed hosting and team features when you need them.
-        </p>
-
-        <div className="pricing-grid">
-          {PRICING.map(plan => (
-            <div
-              key={plan.tier}
-              className={`pricing-card${plan.featured ? ' pricing-card-featured' : ''}`}
-            >
-              {plan.featured && (
-                <div className="pricing-featured-badge">MOST POPULAR</div>
-              )}
-              <span className="pricing-tier">{plan.tier}</span>
-              <span className="pricing-price">{plan.price}</span>
-              <span className="pricing-period">{plan.period}</span>
-              <ul className="pricing-features">
-                {plan.features.map(f => (
-                  <li key={f}>
-                    <span className="pricing-check">✓</span>
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-              <button className={plan.ctaVariant}>{plan.cta}</button>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* ══ FOOTER ═══════════════════════════════════════════ */}
       <footer className="land-footer">
         <div className="land-footer-inner">
@@ -565,7 +481,7 @@ export function Landing() {
           {/* Right branding */}
           <div className="footer-right">
             <span className="footer-brand-name">GALAXZ</span>
-            <span className="footer-version">v0.1.0 · Phase 2 complete</span>
+            <span className="footer-version">v0.1.0</span>
             <span className="footer-copy">© 2025 Galaxz. MIT License.</span>
           </div>
         </div>

@@ -23,6 +23,6 @@ test.describe('Settings', () => {
     await expect(page.locator('.policy-row').filter({ hasText: 'Daily token budget exceeded' }).locator('select')).toHaveValue('fallback');
 
     await expect(page.getByRole('button', { name: 'Save changes' })).toBeVisible();
-    await expect(page.getByText('agents will hot-reload updated config')).toBeVisible();
+    await expect(page.getByText('Changes saved to browser local storage — no backend persistence for this panel yet.')).toBeVisible();
   });
 });

@@ -207,20 +207,42 @@ class RigelAgent:
             raise ValueError(f"Unknown skill: {skill_id}")
 
         raw_result = handler(payload, self.llm)
+
+        skill_name = skill_id.split(".")[-1]
+        normalized = _normalize_skill_output(skill_name, raw_result)
+
+        workspace_root = context.get("workspace_root") if context else None
+        written_artifacts = []
+        if workspace_root and normalized["writable"]:
+            writer = FileWriter(workspace_root)
+            for artifact in normalized["artifacts"]:
+                if len(normalized["artifacts"]) == 1:
+                    filename = context.get("output_path") or writer.infer_filename(
+                        _task_description(skill_id, payload), skill_id.split(".")[-1]
+                    )
+                else:
+                    filename = artifact["filename"]
+                wa = writer.write(filename, artifact["content"])
+                written_artifacts.append(wa.model_dump(mode="python"))
+
         execution_result = None
         externally_calibrated = False
         if self.config.execution_calibration_enabled:
             try:
+                file_path = written_artifacts[0]["absolute_path"] if written_artifacts else None
                 execution_result = execute_generated_output(
                     skill_id=skill_id,
                     payload=payload,
                     result=raw_result,
                     timeout_s=self.config.execution_timeout_s,
                     image=self.config.execution_image,
+                    workspace_root=workspace_root,
+                    file_path=file_path,
                 )
                 externally_calibrated = execution_result is not None
             except ExecutionSandboxUnavailable as exc:
                 logger.warning("Rigel execution calibration unavailable: %s", exc)
+
         confidence_data = score_confidence(
             skill_id,
             payload,
@@ -230,8 +252,6 @@ class RigelAgent:
             parse_error_fallback=self.config.confidence_parse_error_fallback,
         )
 
-        skill_name = skill_id.split(".")[-1]
-        normalized = _normalize_skill_output(skill_name, raw_result)
         skill_confidence = raw_result.pop("confidence", None)
 
         task_result = {
@@ -255,21 +275,9 @@ class RigelAgent:
             "summary": normalized["summary"],
             "writable": normalized["writable"],
             **({"skill_confidence": skill_confidence} if skill_confidence is not None else {}),
+            "executed_from": execution_result.executed_from if execution_result is not None else None,
+            "written_artifacts": written_artifacts,
         }
-
-        written_artifacts = []
-        if context and context.get("workspace_root") and normalized["writable"]:
-            writer = FileWriter(context["workspace_root"])
-            for artifact in normalized["artifacts"]:
-                if len(normalized["artifacts"]) == 1:
-                    filename = context.get("output_path") or writer.infer_filename(
-                        _task_description(skill_id, payload), skill_id.split(".")[-1]
-                    )
-                else:
-                    filename = artifact["filename"]
-                wa = writer.write(filename, artifact["content"])
-                written_artifacts.append(wa.model_dump(mode="python"))
-        task_result["written_artifacts"] = written_artifacts
 
         self._emit_feedback(
             task_id=context.get("task_id") if context else None,

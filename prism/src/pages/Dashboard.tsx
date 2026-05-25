@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import '../styles/tokens.css';
 import '../styles/dashboard.css';
@@ -39,6 +39,11 @@ type AgentManifest = {
   agent_id: string;
   agent_name: string;
   skills: Array<{ skill_id: string }>;
+};
+
+type ThroughputBucket = {
+  bucket: string;
+  count: number;
 };
 
 type RecentTask = {
@@ -108,6 +113,63 @@ function MiniConfBar({ value }: { value: number }) {
   );
 }
 
+function ThroughputChart({ buckets }: { buckets: ThroughputBucket[] }) {
+  const W = 420, H = 72, PAD_L = 28, PAD_R = 8, PAD_T = 8, PAD_B = 20;
+  const innerW = W - PAD_L - PAD_R;
+  const innerH = H - PAD_T - PAD_B;
+
+  const maxCount = Math.max(...buckets.map(b => b.count), 1);
+  const barW = Math.max(3, Math.floor(innerW / buckets.length) - 2);
+
+  function labelHour(iso: string) {
+    const h = parseInt(iso.slice(11, 13), 10);
+    if (h === 0) return '12a';
+    if (h === 12) return '12p';
+    return h < 12 ? `${h}a` : `${h - 12}p`;
+  }
+
+  const tickCount = 5;
+  const yTicks = Array.from({ length: tickCount }, (_, i) =>
+    Math.round((maxCount * i) / (tickCount - 1))
+  );
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      style={{ width: '100%', height: H, display: 'block', overflow: 'visible' }}
+    >
+      {yTicks.map(tick => {
+        const y = PAD_T + innerH - (tick / maxCount) * innerH;
+        return (
+          <g key={tick}>
+            <line x1={PAD_L} x2={W - PAD_R} y1={y} y2={y} stroke="var(--b1)" strokeWidth={0.5} />
+            <text x={PAD_L - 4} y={y + 3.5} textAnchor="end" fontSize={8} fill="var(--t4)" fontFamily="var(--mono)">
+              {tick}
+            </text>
+          </g>
+        );
+      })}
+
+      {buckets.map((b, i) => {
+        const barH = Math.max(1, (b.count / maxCount) * innerH);
+        const x = PAD_L + (i / buckets.length) * innerW + 1;
+        const y = PAD_T + innerH - barH;
+        const showLabel = buckets.length <= 24 || i % Math.ceil(buckets.length / 12) === 0;
+        return (
+          <g key={b.bucket}>
+            <rect x={x} y={y} width={barW} height={barH} fill="var(--purple, #9d7eff)" opacity={0.75} rx={1} />
+            {showLabel && (
+              <text x={x + barW / 2} y={H - 4} textAnchor="middle" fontSize={8} fill="var(--t4)" fontFamily="var(--mono)">
+                {labelHour(b.bucket)}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 function EmptyCardMessage({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ padding: '24px 14px', color: 'var(--t4)', fontFamily: 'var(--mono)', fontSize: 11 }}>
@@ -140,6 +202,12 @@ export function Dashboard() {
   const [recentTasks, setRecentTasks] = useState<RecentTask[]>([]);
   const [apiPingMs, setApiPingMs] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [throughput, setThroughput] = useState<ThroughputBucket[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,10 +215,11 @@ export function Dashboard() {
     async function load() {
       try {
         const started = performance.now();
-        const [statusRes, agentsRes, tasksRes] = await Promise.all([
+        const [statusRes, agentsRes, tasksRes, throughputRes] = await Promise.all([
           fetch('/api/status'),
           fetch('/api/agents'),
           fetch('/api/tasks/recent?limit=8'),
+          fetch('/api/tasks/throughput?hours=24'),
         ]);
         const finished = performance.now();
 
@@ -161,11 +230,13 @@ export function Dashboard() {
         const nextStatus = await statusRes.json();
         const nextAgents = await agentsRes.json();
         const nextTasks = await tasksRes.json();
+        const nextThroughput = throughputRes.ok ? await throughputRes.json() : [];
 
         if (!cancelled) {
           setStatus(nextStatus);
           setAgents(nextAgents);
           setRecentTasks(nextTasks);
+          setThroughput(nextThroughput);
           setApiPingMs(Math.round(finished - started));
           setLoadError(null);
         }
@@ -181,6 +252,47 @@ export function Dashboard() {
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+        setNotifOpen(false);
+      }
+      if (e.key === 'Escape') {
+        setSearchOpen(false);
+        setNotifOpen(false);
+        setSearchQuery('');
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!notifOpen) return;
+    function handleMouseDown(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [notifOpen]);
+
+  const filteredTasks = searchQuery
+    ? recentTasks.filter(t =>
+        (t.task_type ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (t.assigned_agent ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.task_id.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : recentTasks;
 
   const taskStats = status?.tasks;
   const pendingReviews = status?.review_queue.pending ?? 0;
@@ -237,19 +349,55 @@ export function Dashboard() {
             <span className="topbar-sub">— live system view</span>
           </div>
           <div className="topbar-right">
-            <button className="dash-search">
-              <SearchIcon />
-              <span className="dash-search-label">Search...</span>
-              <span className="dash-search-kbd">⌘K</span>
-            </button>
-            <div className="notif-wrap">
+            {searchOpen ? (
+              <input
+                ref={searchInputRef}
+                className="dash-search-input"
+                placeholder="Search tasks..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onBlur={() => { if (!searchQuery) setSearchOpen(false); }}
+              />
+            ) : (
+              <button
+                className="dash-search"
+                onClick={() => { setSearchOpen(true); setNotifOpen(false); }}
+              >
+                <SearchIcon />
+                <span className="dash-search-label">Search...</span>
+                <span className="dash-search-kbd">⌘K</span>
+              </button>
+            )}
+            <div className="notif-wrap" ref={notifRef}>
               <button
                 className="btn btn-ghost btn-sm"
                 style={{ width: 30, height: 30, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onClick={() => setNotifOpen(prev => !prev)}
               >
                 <BellIcon />
               </button>
               {pendingReviews > 0 && <span className="notif-dot" />}
+              {notifOpen && (
+                <div className="notif-dropdown">
+                  <div className="notif-dropdown-head">Notifications</div>
+                  {pendingReviews > 0 ? (
+                    <div className="notif-item">
+                      <span className="notif-item-dot" />
+                      <span className="notif-item-text">
+                        {pendingReviews} {pendingReviews === 1 ? 'task' : 'tasks'} pending review
+                      </span>
+                      <button
+                        className="notif-item-link"
+                        onClick={() => { window.location.href = '/review-queue'; }}
+                      >
+                        Open →
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="notif-empty">No pending notifications</div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -265,20 +413,20 @@ export function Dashboard() {
             </div>
           )}
 
-          <div className="review-banner">
-            <WarningIcon />
-            <div className="review-banner-text">
-              <div className="review-banner-title">
-                {pendingReviews > 0 ? `${pendingReviews} tasks pending human review` : 'No tasks pending human review'}
+          {pendingReviews > 0 && (
+            <div className="review-banner">
+              <WarningIcon />
+              <div className="review-banner-text">
+                <div className="review-banner-title">
+                  {`${pendingReviews} ${pendingReviews === 1 ? 'task' : 'tasks'} pending human review`}
+                </div>
+                <div className="review-banner-sub">Loaded from review queue</div>
               </div>
-              <div className="review-banner-sub">
-                {pendingReviews > 0 ? 'Loaded from review queue' : 'Review queue returned zero pending items'}
-              </div>
+              <button className="btn-open-review" onClick={() => { window.location.href = '/review-queue'; }}>
+                Open Review Queue →
+              </button>
             </div>
-            <button className="btn-open-review" onClick={() => { window.location.href = '/review-queue'; }}>
-              Open Review Queue →
-            </button>
-          </div>
+          )}
 
           <div className="metrics-strip">
             <div className="metric-card">
@@ -308,12 +456,14 @@ export function Dashboard() {
               <div className="card">
                 <div className="card-head">
                   <span className="card-title">Task Throughput</span>
-                  <span className="card-meta">not available</span>
+                  <span className="card-meta">tasks / hour · last 24h</span>
                 </div>
-                <div className="card-body">
-                  <EmptyCardMessage>
-                    No hourly throughput endpoint is available yet. This chart is intentionally empty instead of rendering fake traffic.
-                  </EmptyCardMessage>
+                <div className="card-body" style={{ paddingTop: 12, paddingBottom: 12 }}>
+                  {throughput.length === 0 ? (
+                    <EmptyCardMessage>No completed tasks in the last 24 hours.</EmptyCardMessage>
+                  ) : (
+                    <ThroughputChart buckets={throughput} />
+                  )}
                 </div>
               </div>
 
@@ -359,8 +509,12 @@ export function Dashboard() {
                   <span className="card-meta">recent task log rows</span>
                 </div>
                 <div className="task-feed-body">
-                  {recentTasks.length === 0 && <EmptyCardMessage>No tasks recorded yet.</EmptyCardMessage>}
-                  {recentTasks.map((task) => {
+                  {filteredTasks.length === 0 && (
+                    <EmptyCardMessage>
+                      {searchQuery ? `No tasks match "${searchQuery}".` : 'No tasks recorded yet.'}
+                    </EmptyCardMessage>
+                  )}
+                  {filteredTasks.map((task) => {
                     const isComplete = task.status === 'complete';
                     const isFailed = task.status === 'failed' || task.status === 'escalated';
                     const dotColor = isComplete ? '#00d4a0' : isFailed ? '#ff4d6a' : '#f5c040';

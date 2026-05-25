@@ -1,1 +1,1 @@
-export const REVIEWER = { name: 'Max', role: 'Admin' } as const;
+export const REVIEWER = { name: 'Admin', role: 'Admin' } as const;

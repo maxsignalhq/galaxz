@@ -807,15 +807,19 @@ async def _run_orion_eval_async(result: EvalCaseResult) -> EvalCaseResult:
 
         _expect(accepted["eligible"] is True, "Orion ingest accepts high-confidence refinery feedback")
         _expect(rejected["eligible"] is False, "Orion ingest quarantines weak refinery feedback")
-        _expect(
-            (temp_root / "datasets" / "requirements_to_test_cases.jsonl").exists(),
-            "Orion ingest writes accepted examples under config.dataset_path",
-        )
-        _expect(
-            (temp_root / "quarantine" / "rejected.jsonl").exists(),
-            "Orion ingest writes rejected examples under configured quarantine sibling",
-        )
-        _expect((temp_root / "datasets" / "qa.finance.jsonl").exists(), "Orion extraction writes configured dataset snapshot input")
+        with sqlite3.connect(config.db_path) as _db:
+            _accepted_count = _db.execute(
+                "SELECT COUNT(*) FROM events WHERE quarantined=0"
+            ).fetchone()[0]
+            _rejected_count = _db.execute(
+                "SELECT COUNT(*) FROM events WHERE quarantined=1"
+            ).fetchone()[0]
+            _curated_count = _db.execute(
+                "SELECT COUNT(*) FROM curated_events"
+            ).fetchone()[0]
+        _expect(_accepted_count > 0, "Orion ingest stores accepted examples in events.db")
+        _expect(_rejected_count > 0, "Orion ingest stores rejected examples as quarantined in events.db")
+        _expect(_curated_count > 0, "Orion extraction cycle curates events into dataset")
         emitted_streams = {stream for stream, _ in fake_redis.messages}
         _expect(STREAM_ROUTING_UPDATE in emitted_streams, "Orion heuristics emit routing update")
         _expect(STREAM_DRIFT_ALERT in emitted_streams, "Orion heuristics emit drift alert")

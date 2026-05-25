@@ -58,7 +58,7 @@ class TaskLog:
     """
     Persistent log of all tasks Andromeda processes.
     DB path defaults to 'data/andromeda_tasks.db'.
-    Thread-safe. Orion will query this directly in Phase 3.
+    Thread-safe. Orion will query this directly.
     """
 
     def __init__(self, db_path: str = "data/andromeda_tasks.db"):
@@ -132,6 +132,25 @@ class TaskLog:
             )
             rows = cur.fetchall()
         return [_row_to_dict(r) for r in rows]
+
+    def throughput(self, hours: int = 24) -> list[dict]:
+        """Return per-hour task counts for the last `hours` hours, newest-last."""
+        with self._lock:
+            cur = self._conn.execute(
+                """
+                SELECT
+                    strftime('%Y-%m-%dT%H:00', issued_at) AS bucket,
+                    COUNT(*) AS count
+                FROM tasks
+                WHERE issued_at >= datetime('now', ? || ' hours')
+                  AND status IN ('complete', 'failed', 'escalated')
+                GROUP BY bucket
+                ORDER BY bucket ASC
+                """,
+                (f"-{hours}",),
+            )
+            rows = cur.fetchall()
+        return [{"bucket": r[0], "count": r[1]} for r in rows]
 
     def stats(self) -> dict:
         with self._lock:

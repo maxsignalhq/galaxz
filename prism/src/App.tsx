@@ -5,6 +5,7 @@ import { Landing }        from './pages/Landing';
 import { Dashboard }      from './pages/Dashboard';
 import { DevConsole }     from './pages/DevConsole';
 import { TaskUI }         from './pages/TaskUI';
+import { TaskQueue }      from './pages/TaskQueue';
 import { ReviewQueue }    from './pages/ReviewQueue';
 import { OrionAnalytics } from './pages/OrionAnalytics';
 import { Settings }       from './pages/Settings';
@@ -14,6 +15,7 @@ export default function App() {
     <Routes>
       <Route path="/"             element={<Landing />} />
       <Route path="/dashboard"    element={<Dashboard />} />
+      <Route path="/task-queue"   element={<TaskQueue />} />
       <Route path="/dev-console"  element={<DevConsole />} />
       <Route path="/task-ui"      element={<TaskUI />} />
       <Route path="/review-queue" element={<ReviewQueue />} />

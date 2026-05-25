@@ -15,7 +15,20 @@ test.describe('Galaxz navigation and dashboard', () => {
     await expect(page.locator('.metric-label').filter({ hasText: 'Completed rows' })).toBeVisible();
     await expect(page.locator('.metric-label').filter({ hasText: 'Pending reviews' })).toBeVisible();
     await expect(page.locator('.metric-label').filter({ hasText: 'Failed rows' })).toBeVisible();
-    await expect(page.getByText('No hourly throughput endpoint is available yet.')).toBeVisible();
+    await expect(page.getByText('tasks / hour · last 24h')).toBeVisible();
+
+    const pendingReviewValue = await page
+      .locator('.metric-card')
+      .filter({ hasText: 'Pending reviews' })
+      .locator('.metric-value')
+      .innerText();
+    if (Number(pendingReviewValue.replace(/,/g, '')) === 0) {
+      await expect(page.getByText('No tasks pending human review')).toHaveCount(0);
+      await expect(page.getByText('Review queue returned zero pending items')).toHaveCount(0);
+      await expect(page.locator('aside').getByRole('button', { name: 'Review Queue' })).toBeVisible();
+    } else {
+      await expect(page.getByText(/tasks? pending human review/)).toBeVisible();
+    }
 
     await page.locator('aside').getByRole('button', { name: /^Review Queue/ }).click();
     await expect(page).toHaveURL(/\/review-queue$/);
@@ -26,19 +39,23 @@ test.describe('Galaxz navigation and dashboard', () => {
   test('sidebar lets an operator reach every major workspace area', async ({ page }) => {
     await page.goto('/dashboard');
 
-    await page.getByRole('button', { name: 'Dev Console' }).click();
+    await page.locator('aside').getByRole('button', { name: 'Task Queue' }).click();
+    await expect(page).toHaveURL(/\/task-queue$/);
+    await expect(page.locator('.topbar-title')).toHaveText('Task Queue');
+
+    await page.locator('aside').getByRole('button', { name: 'Dev Console' }).click();
     await expect(page).toHaveURL(/\/dev-console$/);
     await expect(page.getByText('Registered Agents')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Task UI' }).click();
+    await page.locator('aside').getByRole('button', { name: 'Task UI', exact: true }).click();
     await expect(page).toHaveURL(/\/task-ui$/);
     await expect(page.getByPlaceholder('Describe what you need — ⌘Enter to send')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Orion Analytics' }).click();
+    await page.locator('aside').getByRole('button', { name: 'Orion Analytics' }).click();
     await expect(page).toHaveURL(/\/orion$/);
     await expect(page.locator('.topbar-title')).toHaveText('Orion Analytics');
 
-    await page.getByRole('button', { name: 'Settings' }).click();
+    await page.locator('aside').getByRole('button', { name: 'Settings' }).click();
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator('.settings-panel-title')).toHaveText('Models & Connections');
   });

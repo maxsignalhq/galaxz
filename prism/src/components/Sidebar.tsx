@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/tokens.css';
 import { REVIEWER } from '../constants/identity';
+import { useTheme } from '../context/ThemeContext';
 
 const NAV_ROUTES: Partial<Record<string, string>> = {
   dashboard:    '/dashboard',
-  'task-queue': '/dashboard',
+  'task-queue': '/task-queue',
   'dev-console':'/dev-console',
   'task-ui':    '/task-ui',
   'review-queue':'/review-queue',
@@ -37,6 +38,12 @@ interface NavSection {
   label: string;
   items: NavItem[];
 }
+
+type SidebarStatus = {
+  review_queue?: {
+    pending?: number;
+  };
+};
 
 /* ── Icons ─────────────────────────────────────────────────── */
 
@@ -107,12 +114,14 @@ const IconFile = () => (
 
 /* ── Nav data ──────────────────────────────────────────────── */
 
-const NAV_SECTIONS: NavSection[] = [
+function buildNavSections(pendingReviewCount: number | null): NavSection[] {
+  const reviewBadge = pendingReviewCount && pendingReviewCount > 0 ? pendingReviewCount : undefined;
+  return [
   {
     label: 'Platform',
     items: [
       { id: 'dashboard',    label: 'Dashboard',    icon: <IconGrid /> },
-      { id: 'task-queue',   label: 'Task Queue',   icon: <IconList />, badge: 3 },
+      { id: 'task-queue',   label: 'Task Queue',   icon: <IconList /> },
     ],
   },
   {
@@ -120,7 +129,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { id: 'dev-console',  label: 'Dev Console',  icon: <IconCode /> },
       { id: 'task-ui',      label: 'Task UI',      icon: <IconChat /> },
-      { id: 'review-queue', label: 'Review Queue', icon: <IconUsers />, badge: 3 },
+      { id: 'review-queue', label: 'Review Queue', icon: <IconUsers />, badge: reviewBadge },
     ],
   },
   {
@@ -136,7 +145,8 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'docs',         label: 'Docs',         icon: <IconFile /> },
     ],
   },
-];
+  ];
+}
 
 /* ── Sidebar ───────────────────────────────────────────────── */
 
@@ -148,7 +158,31 @@ interface SidebarProps {
 
 export function Sidebar({ activeId = 'dashboard', onNavigate, extraNav }: SidebarProps) {
   const [active, setActive] = useState<NavId>(activeId);
+  const [pendingReviewCount, setPendingReviewCount] = useState<number | null>(null);
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStatus() {
+      try {
+        const response = await fetch('/api/status');
+        if (!response.ok) return;
+        const status = (await response.json()) as SidebarStatus;
+        if (!cancelled) setPendingReviewCount(status.review_queue?.pending ?? 0);
+      } catch {
+        if (!cancelled) setPendingReviewCount(null);
+      }
+    }
+
+    loadStatus();
+    const timer = window.setInterval(loadStatus, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   function handleNav(id: NavId) {
     setActive(id);
@@ -169,7 +203,7 @@ export function Sidebar({ activeId = 'dashboard', onNavigate, extraNav }: Sideba
 
       {/* Nav sections */}
       <nav style={styles.nav}>
-        {NAV_SECTIONS.map((section) => (
+        {buildNavSections(pendingReviewCount).map((section) => (
           <div key={section.label} style={styles.section}>
             <span style={styles.sectionLabel}>{section.label.toUpperCase()}</span>
             {section.items.map((item) => {
@@ -186,14 +220,14 @@ export function Sidebar({ activeId = 'dashboard', onNavigate, extraNav }: Sideba
                   onClick={() => handleNav(item.id)}
                   onMouseEnter={(e) => {
                     if (!isActive) {
-                      (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)';
-                      (e.currentTarget as HTMLElement).style.color = '#edf0fa';
+                      (e.currentTarget as HTMLElement).style.background = 'var(--hover-overlay)';
+                      (e.currentTarget as HTMLElement).style.color = 'var(--t1)';
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (!isActive) {
                       (e.currentTarget as HTMLElement).style.background = 'transparent';
-                      (e.currentTarget as HTMLElement).style.color = '#8a94b0';
+                      (e.currentTarget as HTMLElement).style.color = 'var(--t2)';
                     }
                   }}
                 >
@@ -230,6 +264,29 @@ export function Sidebar({ activeId = 'dashboard', onNavigate, extraNav }: Sideba
             <span style={styles.userName}>{REVIEWER.name}</span>
             <span style={styles.userMeta}>{REVIEWER.role} · v0.1.0</span>
           </div>
+          <button
+            style={styles.themeToggle}
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? (
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <circle cx="6.5" cy="6.5" r="2.5" stroke="currentColor" strokeWidth="1.3" />
+                <line x1="6.5" y1="1" x2="6.5" y2="2.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <line x1="6.5" y1="10.8" x2="6.5" y2="12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <line x1="1" y1="6.5" x2="2.2" y2="6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <line x1="10.8" y1="6.5" x2="12" y2="6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <line x1="2.7" y1="2.7" x2="3.6" y2="3.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <line x1="9.4" y1="9.4" x2="10.3" y2="10.3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <line x1="10.3" y1="2.7" x2="9.4" y2="3.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                <line x1="3.6" y1="9.4" x2="2.7" y2="10.3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <path d="M10.5 7.5C9.8 9.3 8 10.5 6 10.5C3.5 10.5 1.5 8.5 1.5 6C1.5 4 2.7 2.2 4.5 1.5C3.8 2.4 3.5 3.5 3.5 4.5C3.5 7.3 5.7 9.5 8.5 9.5C9.2 9.5 9.9 9.4 10.5 7.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
     </aside>
@@ -243,8 +300,8 @@ const styles: Record<string, React.CSSProperties> = {
     width: 216,
     minWidth: 216,
     height: '100vh',
-    background: '#0b0e17',
-    borderRight: '1px solid rgba(255,255,255,0.055)',
+    background: 'var(--bg1)',
+    borderRight: '1px solid var(--b1)',
     display: 'flex',
     flexDirection: 'column',
     flexShrink: 0,
@@ -267,7 +324,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#00d4a0',
     boxShadow: '0 0 7px #00d4a0',
     flexShrink: 0,
-    /* CSS animation via keyframe defined in tokens.css */
     animation: 'pulse-dot 2.4s ease-in-out infinite',
   } as React.CSSProperties,
 
@@ -276,13 +332,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontWeight: 600,
     letterSpacing: '-0.3px',
-    color: '#edf0fa',
+    color: 'var(--t1)',
     userSelect: 'none',
   },
 
   divider: {
     height: 1,
-    background: 'rgba(255,255,255,0.055)',
+    background: 'var(--b1)',
     flexShrink: 0,
   },
 
@@ -309,7 +365,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 500,
     letterSpacing: '0.25em',
     textTransform: 'uppercase',
-    color: '#2e3650',
+    color: 'var(--t4)',
     padding: '2px 10px 6px',
     userSelect: 'none',
   } as React.CSSProperties,
@@ -323,7 +379,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     background: 'transparent',
     border: 'none',
-    color: '#8a94b0',
+    color: 'var(--t2)',
     fontSize: 12.5,
     fontFamily: "'Geist', system-ui, sans-serif",
     fontWeight: 400,
@@ -398,7 +454,7 @@ const styles: Record<string, React.CSSProperties> = {
   userName: {
     fontSize: 12,
     fontWeight: 500,
-    color: '#edf0fa',
+    color: 'var(--t1)',
     fontFamily: "'Geist', system-ui, sans-serif",
     lineHeight: 1,
   },
@@ -406,8 +462,24 @@ const styles: Record<string, React.CSSProperties> = {
   userMeta: {
     fontFamily: "'Geist Mono', monospace",
     fontSize: 9.5,
-    color: '#48526e',
+    color: 'var(--t3)',
     lineHeight: 1,
+  },
+
+  themeToggle: {
+    marginLeft: 'auto',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 24,
+    height: 24,
+    borderRadius: 5,
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--t3)',
+    cursor: 'pointer',
+    flexShrink: 0,
+    transition: 'background 0.12s ease, color 0.12s ease',
   },
 };
 

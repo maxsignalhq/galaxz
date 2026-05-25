@@ -3,3 +3,4 @@ llm:
   model: ${ANTHROPIC_MODEL}
   api_key: ${ANTHROPIC_AUTH_TOKEN}
   base_url: ${ANTHROPIC_BASE_URL}
+workspace_path: ""

@@ -6,6 +6,8 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
 
+> **Demo:** [Watch the walkthrough →](https://youtu.be/PLACEHOLDER)
+
 ---
 
 ## What it is
@@ -32,7 +34,18 @@ cp .env.example .env
 
 **Step 3 — Boot**
 ```bash
-docker-compose up
+docker compose up --build
+```
+
+By default, Galaxz runs in compact mode: the main `galaxz` service boots
+Andromeda, Orion, Rigel, and Vega in one runtime to keep local and early-stage
+deployments inexpensive.
+
+Rigel and Vega still have standalone service wrappers for a future distributed
+agent runtime. To start those optional agent containers explicitly:
+
+```bash
+docker compose --profile distributed-agents up --build
 ```
 
 **Step 4 — Run your first task**
@@ -97,7 +110,8 @@ Set `GALAXZ_API_KEY` in `.env` to secure your deployment. Omit it for local deve
 
 1. Implement the `SkillContract` interface from `core/contracts/skill_contract.py`
 2. Register your agent with Pulsar on init
-3. Add your service to `docker-compose.yml`
+3. Run it in-process for compact mode, or add an optional profiled service to
+   `docker-compose.yml` when the distributed agent runtime is needed.
 
 ---
 

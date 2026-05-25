@@ -1,5 +1,5 @@
 """
-Smoke tests for Orion Phase 1.
+Smoke tests for Orion.
 Requires a running Redis instance (default: redis://localhost:6379).
 Skip automatically if Redis is unavailable.
 

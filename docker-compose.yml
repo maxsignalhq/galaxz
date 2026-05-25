@@ -24,6 +24,10 @@ services:
       retries: 3
 
   vega:
+    # Optional future distributed-runtime service.
+    # The default Galaxz service already boots Vega in-process for low-cost local use.
+    profiles:
+      - distributed-agents
     build: .
     image: galaxz:latest
     depends_on:
@@ -43,6 +47,10 @@ services:
       retries: 3
 
   rigel:
+    # Optional future distributed-runtime service.
+    # The default Galaxz service already boots Rigel in-process for low-cost local use.
+    profiles:
+      - distributed-agents
     build: .
     image: galaxz:latest
     depends_on:
@@ -83,6 +91,7 @@ services:
       - ./config:/app/config
       - ./orion/config:/app/orion/config
       - ./orion/data:/app/orion/data
+      - ./agents:/app/agents
     command: python -u services/andromeda_service.py
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]

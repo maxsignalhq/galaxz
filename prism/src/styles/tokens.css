@@ -33,11 +33,52 @@
   --red:    #ff4d6a;   /* errors, reject, SLA urgent, fail */
   --purple: #9d7eff;   /* Pulsar skill registry */
   --teal:   #38a8ff;   /* Aether Redis bus */
-  --orion:  #ff6b9d;   /* Orion Phase 3 */
+  --orion:  #ff6b9d;   /* Orion learning layer */
 
   /* Typography */
   --sans: 'Geist', system-ui, sans-serif;
   --mono: 'Geist Mono', monospace;
+
+  /* Overlays */
+  --hover-overlay: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Light theme overrides ────────────────────────────────────── */
+
+[data-theme="light"] {
+  /* Background layers — warm paper-white with blue-grey cast */
+  --bg:  #f4f6fc;
+  --bg1: #ffffff;
+  --bg2: #edf0f9;
+  --bg3: #e2e7f4;
+  --bg4: #d4dbed;
+
+  /* Borders — dark-on-light */
+  --b1: rgba(18, 38, 80, 0.07);
+  --b2: rgba(18, 38, 80, 0.12);
+  --b3: rgba(18, 38, 80, 0.18);
+
+  /* Text */
+  --t1: #0c1529;
+  --t2: #485070;
+  --t3: #7d8aaa;
+  --t4: #adb8d4;
+
+  /* Overlays */
+  --hover-overlay: rgba(0, 0, 0, 0.04);
+}
+
+/* Hardcoded white-on-dark hover surfaces that live outside the token system */
+[data-theme="light"] .agent-row:hover   { background: rgba(0, 0, 0, 0.025) !important; }
+[data-theme="light"] .task-row:hover    { background: rgba(0, 0, 0, 0.025) !important; }
+[data-theme="light"] .skill-tr:hover td { background: rgba(0, 0, 0, 0.025) !important; }
+[data-theme="light"] .lc-row:hover      { background: rgba(0, 0, 0, 0.025) !important; }
+
+/* Code/pre blocks in light mode */
+[data-theme="light"] pre,
+[data-theme="light"] .code-output {
+  background: var(--bg2);
+  border-color: var(--b1);
 }
 
 /* ── Reset ───────────────────────────────────────────────────── */
@@ -131,7 +172,7 @@ body {
   color: var(--t2);
 }
 .btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hover-overlay);
   color: var(--t1);
 }
 

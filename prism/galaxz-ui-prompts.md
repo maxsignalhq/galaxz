@@ -87,7 +87,7 @@ Sections and nav items (in order):
     - Docs — icon: file text
 
   Footer (bottom, above border):
-    - User row: avatar circle (24px, gradient blue→purple, initial "M"), name "Max", role "Admin · v0.1.0"
+    - User row: avatar circle (24px, gradient blue→purple, initial "A"), name "Admin", role "Admin · v0.1.0"
 
 Nav item styling:
   Default: padding 7px 10px, border-radius 6px, color var(--t2), font-size 12.5px

@@ -61,9 +61,10 @@ class DatasetStore:
     async def snapshot(self, domain: str, version: str) -> str:
         src = self._domain_path(domain)
         dst = self._snapshot_path(domain, version)
-        await asyncio.get_event_loop().run_in_executor(
-            None, shutil.copy2, str(src), str(dst)
-        )
+        if src.exists():
+            await asyncio.get_event_loop().run_in_executor(
+                None, shutil.copy2, str(src), str(dst)
+            )
         return str(dst)
 
     async def list_domains(self) -> list[str]:

@@ -14,7 +14,8 @@ class FakeRegistry:
     def __init__(self) -> None:
         self._skills = {
             "rigel.skill.code_generation": ["rigel"],
-            "requirements_to_test_cases": ["vega"],
+            "vega.skill.requirements_to_test_cases": ["vega"],
+            "vega.skill.test_case_execution": ["vega"],
         }
 
     def health_check(self) -> dict:
@@ -26,10 +27,30 @@ class FakeRegistry:
     def get_agents_for_skill(self, skill_id: str) -> list:
         return self._skills.get(skill_id, [])
 
+    def list_agents(self) -> list:
+        return ["rigel"]
+
+
+class FakeTaskLog:
+    def stats(self) -> dict:
+        return {"total": 0}
+
+
+class FakeAether:
+    class Redis:
+        def ping(self) -> bool:
+            return True
+
+    redis = Redis()
+
+    def close(self) -> None:
+        return None
+
 
 class FakeAndromeda:
     def __init__(self, fail: bool = False) -> None:
         self.registry = FakeRegistry()
+        self.task_log = FakeTaskLog()
         self.fail = fail
         self.route_calls: list[dict] = []
 
@@ -62,16 +83,53 @@ class FakeAndromeda:
         }
 
 
+class SequencedAndromeda(FakeAndromeda):
+    def route(self, **kwargs) -> dict:
+        super().route(**kwargs)
+        task = kwargs["task"]
+        if task.skill == "rigel.skill.code_generation":
+            return {
+                "task_id": "rigel-task",
+                "task_type": "code_generation",
+                "required_skills": ["rigel.skill.code_generation"],
+                "assigned_agent": "rigel",
+                "status": "complete",
+                "confidence": 0.91,
+                "issued_at": "2026-05-09T00:00:00Z",
+                "completed_at": "2026-05-09T00:00:01Z",
+                "result": {"code": "def convert(value):\n    return value", "language": "python"},
+            }
+        if task.skill == "vega.skill.requirements_to_test_cases":
+            return {
+                "task_id": "vega-task",
+                "task_type": "requirements_to_test_cases",
+                "required_skills": ["vega.skill.requirements_to_test_cases"],
+                "assigned_agent": "vega",
+                "status": "complete",
+                "confidence": 0.88,
+                "issued_at": "2026-05-09T00:00:01Z",
+                "completed_at": "2026-05-09T00:00:02Z",
+                "result": {"test_cases": [{"id": "TC-001"}], "total_count": 1},
+            }
+        raise AssertionError(task.skill)
+
+
 def test_health_endpoint_reports_registry_status(monkeypatch):
     _reset_auth(monkeypatch)
     fake = FakeAndromeda()
     monkeypatch.setattr(andromeda_service, "boot", lambda: fake)
+    monkeypatch.setattr(andromeda_service, "get_aether_client", lambda: FakeAether())
 
     with TestClient(andromeda_service.app) as client:
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "andromeda", "version": "0.1.0"}
+    body = response.json()
+    assert body["service"] == "andromeda"
+    assert body["version"] == "1.0.0"
+    assert body["checks"]["pulsar"] == {"status": "ok", "agent_count": 1}
+    assert body["checks"]["aether"]["status"] == "ok"
+    assert body["checks"]["task_log"] == {"status": "ok", "recent_tasks": 0}
 
 
 def test_task_endpoint_normalizes_rigel_skill_and_routes_payload(monkeypatch):
@@ -125,6 +183,108 @@ def test_task_endpoint_maps_pr_review_payload(monkeypatch):
     assert payload["diff"] == "diff --git a/app.py b/app.py\n+print('token')"
     assert payload["spec"] == payload["diff"]
     assert payload["task"] == payload["diff"]
+
+
+def test_task_endpoint_keeps_vega_skill_and_routes_payload(monkeypatch):
+    _reset_auth(monkeypatch)
+    fake = FakeAndromeda()
+    monkeypatch.setattr(andromeda_service, "boot", lambda: fake)
+
+    with TestClient(andromeda_service.app) as client:
+        response = client.post(
+            "/task",
+            json={
+                "task": "Executed checkout regression: payment validation failed for expired cards.",
+                "skill_id": "test_case_execution",
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    call = fake.route_calls[0]["task"]
+    assert call["skill"] == "vega.skill.test_case_execution"
+    assert call["payload"]["test_results"] == [
+        {
+            "tc_id": "UI-001",
+            "status": "fail",
+            "actual_result": "Executed checkout regression: payment validation failed for expired cards.",
+        }
+    ]
+
+
+def test_task_endpoint_auto_routes_code_then_qa(monkeypatch):
+    _reset_auth(monkeypatch)
+    fake = SequencedAndromeda()
+    monkeypatch.setattr(andromeda_service, "boot", lambda: fake)
+
+    prompt = (
+        "Write a Python script that converts measurements like Celsius to Fahrenheit. "
+        "Then using same requirements create test cases in ISTQB style."
+    )
+    with TestClient(andromeda_service.app) as client:
+        response = client.post(
+            "/task",
+            json={"task": prompt, "skill_id": "auto", "route_mode": "auto"},
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["assigned_agent"] == "rigel+vega"
+    assert body["required_skills"] == ["rigel.skill.code_generation", "vega.skill.requirements_to_test_cases"]
+    assert body["result"]["steps"][0]["agent"] == "rigel"
+    assert body["result"]["steps"][1]["agent"] == "vega"
+    assert [call["task"]["skill"] for call in fake.route_calls] == [
+        "rigel.skill.code_generation",
+        "vega.skill.requirements_to_test_cases",
+    ]
+    first_payload = fake.route_calls[0]["task"]["payload"]
+    assert "Do not create test cases" in first_payload["spec"]
+    assert "ISTQB style" not in first_payload["spec"]
+    assert "Generated implementation from Rigel" in fake.route_calls[1]["task"]["payload"]["raw_requirements"]
+
+
+def test_task_endpoint_includes_task_ui_session_context_for_followups(monkeypatch):
+    _reset_auth(monkeypatch)
+    fake = FakeAndromeda()
+    monkeypatch.setattr(andromeda_service, "boot", lambda: fake)
+
+    with TestClient(andromeda_service.app) as client:
+        response = client.post(
+            "/task",
+            json={
+                "task": "Redo it and come back with the same program at 90% confidence.",
+                "skill_id": "code_generation",
+                "route_mode": "auto",
+                "session_context": [
+                    {
+                        "role": "user",
+                        "skill_id": "rigel.skill.code_generation",
+                        "content": "Write a Python script that converts Celsius to Fahrenheit.",
+                        "status": "complete",
+                    },
+                    {
+                        "role": "agent",
+                        "skill_id": "rigel.skill.code_generation",
+                        "assigned_agent": "rigel",
+                        "status": "complete",
+                        "confidence": 0.6,
+                        "content": "Code:\ndef c_to_f(c):\n    return c * 9 / 5 + 32",
+                    },
+                ],
+            },
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    call = fake.route_calls[0]
+    payload = call["task"]["payload"]
+    assert "Current user message:" in payload["spec"]
+    assert "Redo it and come back with the same program at 90% confidence." in payload["spec"]
+    assert "Write a Python script that converts Celsius to Fahrenheit." in payload["spec"]
+    assert "def c_to_f" in payload["spec"]
+    assert call["context"]["current_user_message"] == "Redo it and come back with the same program at 90% confidence."
+    assert call["context"]["task_ui_session"][1]["confidence"] == 0.6
 
 
 def test_task_endpoint_returns_500_when_router_fails(monkeypatch):

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 from contextlib import asynccontextmanager
@@ -11,18 +12,35 @@ from uuid import uuid4
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from boot import boot
 from agents.andromeda.middleware.auth import ApiKeyMiddleware
 from agents.andromeda.orchestrator import Andromeda
+from services.file_writer import FileWriter
 from core.aether.client import AetherClient, get_aether_client
 from core.contracts import TaskContract
 from core.contracts.contracts import FeedbackEvent, OutcomeType
+from core.llm.provider import call_llm, load_provider_config
 from orion.core.candidate_client import CandidateClient, CandidateNotFoundError
+from orion.core.dataset_store import DatasetStore
 
 STREAM_FEEDBACK = "aether:task.feedback"
 STREAM_FINETUNE = "aether:orion.finetune"
+
+logger = logging.getLogger(__name__)
+
+
+def _read_workspace_path() -> str:
+    import yaml as _yaml
+    path = Path("config/providers.yaml")
+    if not path.exists():
+        return ""
+    with path.open(encoding="utf-8") as f:
+        data = _yaml.safe_load(f) or {}
+    return data.get("workspace_path", "") or ""
+
 
 def _orion_db_path() -> str:
     orion = getattr(_andromeda, "orion", None)
@@ -59,9 +77,20 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(ApiKeyMiddleware)
 
 
+class TaskSessionContextItem(BaseModel):
+    role: Optional[str] = None
+    content: str
+    skill_id: Optional[str] = None
+    assigned_agent: Optional[str] = None
+    status: Optional[str] = None
+    confidence: Optional[float] = None
+
+
 class TaskRequest(BaseModel):
     task: str
     skill_id: str
+    route_mode: Optional[str] = "auto"
+    session_context: list[TaskSessionContextItem] = Field(default_factory=list)
 
 
 class ResolveRequest(BaseModel):
@@ -71,6 +100,31 @@ class ResolveRequest(BaseModel):
 class CandidateReviewRequest(BaseModel):
     reviewed_by: str
     reviewer_note: Optional[str] = None
+
+
+class TaskFeedbackRequest(BaseModel):
+    outcome: str  # "accepted" | "rejected"
+
+
+_SHORT_SKILL_ALIASES = {
+    "code_generation": "rigel.skill.code_generation",
+    "debug_triage": "rigel.skill.debug_triage",
+    "pr_review": "rigel.skill.pr_review",
+    "refactor": "rigel.skill.refactor",
+    "scaffold": "rigel.skill.scaffold",
+    "test_writing": "rigel.skill.test_writing",
+    "requirements_to_test_cases": "vega.skill.requirements_to_test_cases",
+    "test_case_execution": "vega.skill.test_case_execution",
+    "defect_reporting": "vega.skill.defect_reporting",
+}
+
+
+def _normalize_skill_id(skill_id: str) -> str:
+    if skill_id == "auto" or "." in skill_id:
+        return skill_id
+    if _andromeda.registry.get_agents_for_skill(skill_id):
+        return skill_id
+    return _SHORT_SKILL_ALIASES.get(skill_id, f"rigel.skill.{skill_id}")
 
 
 def _payload_for_skill(skill_id: str, task_text: str) -> dict:
@@ -87,28 +141,346 @@ def _payload_for_skill(skill_id: str, task_text: str) -> dict:
     elif skill_id == "rigel.skill.scaffold":
         payload["project_type"] = "service"
         payload["stack"] = task_text
+    elif skill_id in ("requirements_to_test_cases", "vega.skill.requirements_to_test_cases"):
+        payload["raw_requirements"] = task_text
+        payload["source_type"] = "plain"
+    elif skill_id in ("test_case_execution", "vega.skill.test_case_execution"):
+        payload["test_results"] = [
+            {
+                "tc_id": "UI-001",
+                "status": "fail",
+                "actual_result": task_text,
+            }
+        ]
+    elif skill_id in ("defect_reporting", "vega.skill.defect_reporting"):
+        payload["raw_requirements"] = task_text
+        payload["test_results"] = [
+            {
+                "tc_id": "UI-001",
+                "status": "fail",
+                "actual_result": task_text,
+            }
+        ]
     return payload
+
+
+def _truncate_context_value(value: str, limit: int = 5000) -> str:
+    value = value.strip()
+    if len(value) <= limit:
+        return value
+    return value[:limit] + "\n\n[truncated]"
+
+
+def _format_session_context(session_context: list[TaskSessionContextItem]) -> str:
+    parts: list[str] = []
+    for index, item in enumerate(session_context[-12:], start=1):
+        content = _truncate_context_value(item.content)
+        if not content:
+            continue
+
+        label = item.role or "message"
+        meta = []
+        if item.skill_id:
+            meta.append(f"skill={item.skill_id}")
+        if item.assigned_agent:
+            meta.append(f"agent={item.assigned_agent}")
+        if item.status:
+            meta.append(f"status={item.status}")
+        if isinstance(item.confidence, (int, float)):
+            meta.append(f"confidence={item.confidence:.2f}")
+
+        suffix = f" ({', '.join(meta)})" if meta else ""
+        parts.append(f"[{index}] {label}{suffix}\n{content}")
+
+    return "\n\n".join(parts)
+
+
+def _task_text_with_session_context(
+    task_text: str,
+    session_context: list[TaskSessionContextItem],
+) -> str:
+    formatted_context = _format_session_context(session_context)
+    if not formatted_context:
+        return task_text
+
+    return (
+        "This request is part of an existing Task UI session. Continue the same task unless "
+        "the current user message explicitly starts a new one. Use the prior user request "
+        "and prior agent output as the subject of revision, redo, threshold, or follow-up requests.\n\n"
+        f"Current user message:\n{task_text.strip()}\n\n"
+        f"Prior Task UI session context:\n{formatted_context}"
+    )
+
+
+def _classify_skill_with_llm(task_text: str) -> Optional[str]:
+    """Use LLM to pick the best skill_id. Short timeout so failures fall through quickly."""
+    import os as _os
+    prev = _os.environ.get("LITELLM_TIMEOUT_SECONDS")
+    _os.environ["LITELLM_TIMEOUT_SECONDS"] = "8"
+    try:
+        skills = _andromeda.registry.get_all_skills()
+        if not skills:
+            return None
+        lines = [f"- {s.skill_id}: {s.description}" for s in skills]
+        skill_list = "\n".join(lines)
+        system = (
+            "You are a task router. Given a user task and a list of available skills, "
+            "respond with ONLY the single best skill_id — nothing else, no explanation, no punctuation."
+        )
+        user = (
+            f"Available skills:\n{skill_list}\n\n"
+            f"User task: {task_text.strip()}\n\n"
+            "Reply with exactly one skill_id from the list above."
+        )
+        provider_cfg = load_provider_config()
+        raw, _, _ = call_llm([{"role": "user", "content": user}], provider_cfg, system_prompt=system)
+        chosen = raw.strip().strip('"').strip("'").split()[0] if raw.strip() else ""
+        if any(s.skill_id == chosen for s in skills):
+            return chosen
+        for s in skills:
+            if chosen in s.skill_id or s.skill_id.endswith(f".{chosen}"):
+                return s.skill_id
+    except Exception:
+        pass  # fall through to keyword classifier
+    finally:
+        if prev is None:
+            _os.environ.pop("LITELLM_TIMEOUT_SECONDS", None)
+        else:
+            _os.environ["LITELLM_TIMEOUT_SECONDS"] = prev
+    return None
+
+
+def _is_auto_route(skill_id: str, route_mode: Optional[str]) -> bool:
+    return route_mode == "auto" and skill_id in {
+        "auto",
+        "rigel.skill.code_generation",
+        "code_generation",
+    }
+
+
+_CODE_MARKERS = ("write", "create", "build", "script", "program", "python")
+_QA_MARKERS = ("test case", "test cases", "istqb", "qa", "testing")
+
+
+def _needs_code_then_qa(task_text: str) -> bool:
+    text = task_text.lower()
+    return any(m in text for m in _CODE_MARKERS) and any(m in text for m in _QA_MARKERS)
+
+
+def _needs_qa_only(task_text: str) -> bool:
+    text = task_text.lower()
+    return any(m in text for m in _QA_MARKERS) and not any(m in text for m in _CODE_MARKERS)
+
+
+# Ordered from most-specific to least-specific. First match wins.
+_SKILL_KEYWORD_RULES: list[tuple[tuple[str, ...], str]] = [
+    # Vega QA
+    (("defect report", "bug report", "jira ticket", "failed test"), "vega.skill.defect_reporting"),
+    (("execute test", "run test", "test execution", "test results", "pass rate", "pass/fail"), "vega.skill.test_case_execution"),
+    (("istqb", "test case", "test cases", "test suite", "write tests for requirement"), "vega.skill.requirements_to_test_cases"),
+    # PM
+    (("stakeholder brief", "executive brief", "executive summary for", "business case"), "pm.skill.stakeholder_brief"),
+    (("prioriti", "moscow", "rice framework", "backlog", "feature list"), "pm.skill.prioritization"),
+    (("user stor", "acceptance criteria", "as a user", "gherkin", "given when then"), "pm.skill.user_stories"),
+    (("product requirements", "prd", "product requirement", "requirements document", "write a prd"), "pm.skill.prd"),
+    # Lumina UI
+    (("accessibility", "wcag", "aria", "screen reader", "a11y", "color contrast"), "lumina.skill.accessibility_audit"),
+    (("style guide", "brand guide", "brand identity", "visual identity"), "lumina.skill.style_guide"),
+    (("ux review", "user experience review", "usability", "user flow review", "ux audit"), "lumina.skill.ux_review"),
+    (("design system", "design token", "color token", "typography scale", "spacing token"), "lumina.skill.design_system"),
+    (("ui component", "react component", "vue component", "generate component", "component for"), "lumina.skill.component_generation"),
+    # Rigel Engineering
+    (("debug", "error trace", "stack trace", "typeerror", "exception", "crash", "fix bug", "bug in"), "rigel.skill.debug_triage"),
+    (("code review", "pr review", "pull request review", "review this", "review the"), "rigel.skill.pr_review"),
+    (("refactor", "clean up", "extract", "decompose", "make composable"), "rigel.skill.refactor"),
+    (("unit test", "write test", "testing library", "jest", "pytest", "mocha"), "rigel.skill.test_writing"),
+    (("scaffold", "boilerplate", "project structure", "file structure", "set up a project"), "rigel.skill.scaffold"),
+]
+
+
+def _keyword_classify_skill(task_text: str) -> Optional[str]:
+    text = task_text.lower()
+    for keywords, skill_id in _SKILL_KEYWORD_RULES:
+        if any(kw in text for kw in keywords):
+            return skill_id
+    return None
+
+
+def _implementation_prompt_for_auto_route(task_text: str) -> str:
+    implementation_part = re.split(
+        r"\bthen\b|\bafter that\b|\busing same requirements\b",
+        task_text,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip()
+    if not implementation_part:
+        implementation_part = task_text.strip()
+    return (
+        "Implement only the Python program requested below. "
+        "Do not create test cases, unit tests, QA artifacts, or ISTQB documentation in this step.\n\n"
+        f"Implementation request:\n{implementation_part}"
+    )
+
+
+def _truncate_for_agent_context(value: str, limit: int = 12000) -> str:
+    if len(value) <= limit:
+        return value
+    return value[:limit] + "\n\n[truncated for downstream QA context]"
+
+
+def _route_one(
+    skill_id: str,
+    task_text: str,
+    session_context: Optional[list[TaskSessionContextItem]] = None,
+) -> dict:
+    session_context = session_context or []
+    effective_task_text = _task_text_with_session_context(task_text, session_context)
+    task = TaskContract(
+        task_id=uuid4(),
+        origin="andromeda_api",
+        skill=skill_id,
+        payload=_payload_for_skill(skill_id, effective_task_text),
+        confidence_threshold=0.65,
+    )
+    route_context = {
+        "task_ui_session": [
+            item.model_dump(exclude_none=True) for item in session_context
+        ],
+        "current_user_message": task_text,
+    } if session_context else None
+    if route_context is not None:
+        return _andromeda.route(task=task, context=route_context)
+    return _andromeda.route(task=task)
+
+
+def _route_code_then_qa(
+    task_text: str,
+    session_context: Optional[list[TaskSessionContextItem]] = None,
+) -> dict:
+    contextual_task_text = _task_text_with_session_context(task_text, session_context or [])
+    code_prompt = _implementation_prompt_for_auto_route(contextual_task_text)
+    code_state = _route_one("rigel.skill.code_generation", code_prompt)
+    if code_state.get("status") != "complete":
+        return code_state
+
+    code_result = code_state.get("result") if isinstance(code_state.get("result"), dict) else {}
+    generated_code = _truncate_for_agent_context(str(code_result.get("code", "")))
+    qa_prompt = (
+        "Create ISTQB-style test cases from these requirements and the generated implementation.\n"
+        "Do not rewrite the implementation. Produce QA/test-case output only.\n"
+        "Create no more than 6 high-value test cases covering positive, negative, and edge paths.\n\n"
+        f"Original user request and session context:\n{contextual_task_text}\n\n"
+        "Generated implementation from Rigel:\n"
+        f"{generated_code}\n\n"
+        "Required QA output: ISTQB-style test cases for this implementation and its requirements."
+    )
+    qa_skill_id = "vega.skill.requirements_to_test_cases"
+    qa_state = _route_one(qa_skill_id, qa_prompt)
+
+    status = "complete" if qa_state.get("status") == "complete" else qa_state.get("status", "failed")
+    confidence_values = [
+        value for value in (code_state.get("confidence"), qa_state.get("confidence"))
+        if isinstance(value, (int, float))
+    ]
+    confidence = min(confidence_values) if confidence_values else 0.0
+    qa_result = qa_state.get("result") if isinstance(qa_state.get("result"), dict) else {}
+
+    return {
+        "task_id": qa_state.get("task_id") or code_state.get("task_id"),
+        "task_type": "code_then_qa",
+        "required_skills": ["rigel.skill.code_generation", qa_skill_id],
+        "assigned_agent": "rigel+vega",
+        "assignment_reason": "auto_route: Rigel code_generation → Vega requirements_to_test_cases",
+        "status": status,
+        "confidence": confidence,
+        "confidence_breakdown": {
+            "rigel_code_generation": code_state.get("confidence", 0.0),
+            "vega_requirements_to_test_cases": qa_state.get("confidence", 0.0),
+        },
+        "gaps": [],
+        "failure_reason": qa_state.get("failure_reason") if status != "complete" else None,
+        "escalated_to_human": bool(code_state.get("escalated_to_human") or qa_state.get("escalated_to_human")),
+        "issued_at": code_state.get("issued_at"),
+        "completed_at": qa_state.get("completed_at") or code_state.get("completed_at"),
+        "result": {
+            "code": generated_code,
+            "language": code_result.get("language", "python"),
+            "notes": "Auto-route completed: Rigel generated the Python program, then Vega generated ISTQB-style test cases.",
+            "qa_result": qa_result,
+            "steps": [
+                {
+                    "agent": code_state.get("assigned_agent"),
+                    "skill": "rigel.skill.code_generation",
+                    "task_id": code_state.get("task_id"),
+                    "status": code_state.get("status"),
+                    "confidence": code_state.get("confidence"),
+                },
+                {
+                    "agent": qa_state.get("assigned_agent"),
+                    "skill": qa_skill_id,
+                    "task_id": qa_state.get("task_id"),
+                    "status": qa_state.get("status"),
+                    "confidence": qa_state.get("confidence"),
+                },
+            ],
+        },
+    }
 
 
 @app.post("/task")
 def post_task(req: TaskRequest):
-    skill_id = req.skill_id
-    if "." not in skill_id and not _andromeda.registry.get_agents_for_skill(skill_id):
-        skill_id = f"rigel.skill.{skill_id}"
+    skill_id = _normalize_skill_id(req.skill_id)
+    if _is_auto_route(skill_id, req.route_mode):
+        if _needs_code_then_qa(req.task):
+            try:
+                return _route_code_then_qa(req.task, req.session_context)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        # Keyword-based classification across all 18 registered skills
+        keyword_match = _keyword_classify_skill(req.task)
+        if keyword_match:
+            skill_id = _normalize_skill_id(keyword_match)
+        elif _needs_qa_only(req.task):
+            skill_id = "vega.skill.requirements_to_test_cases"
+        else:
+            skill_id = "rigel.skill.code_generation"
+
+    skill_id = _normalize_skill_id(skill_id)
 
     try:
-        task = TaskContract(
-            task_id=uuid4(),
-            origin="andromeda_api",
-            skill=skill_id,
-            payload=_payload_for_skill(skill_id, req.task),
-            confidence_threshold=0.65,
-        )
-        state = _andromeda.route(task=task)
+        state = _route_one(skill_id, req.task, req.session_context)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return state
+    workspace_path = _read_workspace_path()
+    file_results: list[dict] = []
+    ran_file_write = False
+
+    if workspace_path and state.get("writable") and state.get("artifacts"):
+        ran_file_write = True
+        try:
+            writer = FileWriter(workspace_root=workspace_path)
+            file_results = writer.write(artifacts=state["artifacts"])
+        except FileNotFoundError:
+            logger.warning(
+                "workspace_path %s does not exist — skipping file write", workspace_path
+            )
+            file_results = []
+
+    artifacts_in_response = (
+        file_results
+        if ran_file_write
+        else [{**a, "written": False} for a in state.get("artifacts", [])]
+    )
+
+    return {
+        **state,
+        "artifacts": artifacts_in_response,
+        "workspace_path": workspace_path or None,
+        "confidence_breakdown": state.get("confidence_breakdown") or {},
+        "gaps": state.get("gaps") or [],
+        "summary": state.get("summary") or "",
+    }
 
 
 @app.get("/review/queue")
@@ -140,6 +512,12 @@ def get_task_stats():
     return _andromeda.task_log.stats()
 
 
+@app.get("/tasks/throughput")
+def get_task_throughput(hours: int = 24):
+    hours = max(1, min(hours, 168))
+    return _andromeda.task_log.throughput(hours)
+
+
 @app.get("/status")
 def get_status():
     registry_health = _andromeda.registry.health_check()
@@ -162,6 +540,64 @@ def get_status():
 @app.get("/orion/status")
 def get_orion_status():
     return _orion_status()
+
+
+@app.get("/orion/analytics")
+def get_orion_analytics(hours: int = 24):
+    hours = max(1, min(hours, 168))
+    db_path = _orion_db_path()
+    if not os.path.exists(db_path):
+        return {"event_volume": [], "by_domain": [], "by_agent": [], "outcome_counts": {}}
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cur = conn.execute(
+                """
+                SELECT strftime('%Y-%m-%dT%H:00', created_at) AS bucket, COUNT(*) AS count
+                FROM events
+                WHERE created_at >= datetime('now', ? || ' hours') AND quarantined = 0
+                GROUP BY bucket ORDER BY bucket ASC
+                """,
+                (f"-{hours}",),
+            )
+            event_volume = [{"bucket": r[0], "count": r[1]} for r in cur.fetchall()]
+
+            cur = conn.execute(
+                "SELECT domain, COUNT(*) FROM events WHERE quarantined=0 GROUP BY domain ORDER BY COUNT(*) DESC"
+            )
+            by_domain = [{"domain": r[0], "count": r[1]} for r in cur.fetchall()]
+
+            cur = conn.execute(
+                """
+                SELECT agent_id, COUNT(*) AS total,
+                       AVG(confidence) AS avg_conf,
+                       SUM(CASE WHEN outcome='success' THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS success_rate
+                FROM events WHERE quarantined=0
+                GROUP BY agent_id ORDER BY total DESC
+                """
+            )
+            by_agent = [
+                {
+                    "agent_id": r[0],
+                    "count": r[1],
+                    "avg_confidence": round(r[2] or 0, 3),
+                    "success_rate": round(r[3] or 0, 3),
+                }
+                for r in cur.fetchall()
+            ]
+
+            cur = conn.execute(
+                "SELECT outcome, COUNT(*) FROM events WHERE quarantined=0 GROUP BY outcome"
+            )
+            outcome_counts = {r[0]: r[1] for r in cur.fetchall()}
+
+        return {
+            "event_volume": event_volume,
+            "by_domain": by_domain,
+            "by_agent": by_agent,
+            "outcome_counts": outcome_counts,
+        }
+    except sqlite3.Error:
+        return {"event_volume": [], "by_domain": [], "by_agent": [], "outcome_counts": {}}
 
 
 @app.get("/agents")
@@ -256,6 +692,32 @@ def reject_task(task_id: str, req: ResolveRequest = ResolveRequest()):
     return {"task_id": task_id, "status": "rejected"}
 
 
+@app.post("/tasks/{task_id}/feedback")
+def submit_task_feedback(task_id: str, req: TaskFeedbackRequest):
+    if req.outcome not in ("accepted", "rejected"):
+        raise HTTPException(status_code=400, detail="outcome must be 'accepted' or 'rejected'")
+    task = _andromeda.task_log.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    try:
+        result_data = json.loads(task.get("result_json") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        result_data = {}
+    event = FeedbackEvent(
+        task_id=task_id,
+        task_category=task.get("task_type") or "unknown",
+        agent_id="human_reviewer",
+        outcome=OutcomeType.approved if req.outcome == "accepted" else OutcomeType.failed,
+        confidence_score=1.0 if req.outcome == "accepted" else 0.0,
+        input_hash=task_id,
+        agent_output=result_data,
+        human_verified=True,
+        latency_ms=0,
+    )
+    _aether.publish_event(STREAM_FEEDBACK, json.loads(event.model_dump_json()))
+    return {"task_id": task_id, "outcome": req.outcome}
+
+
 @app.get("/finetune/candidates")
 def get_finetune_candidates():
     candidates = _candidate_client.list_pending() if _candidate_client else []
@@ -288,6 +750,185 @@ def reject_finetune_candidate(candidate_id: str, req: CandidateReviewRequest):
     except CandidateNotFoundError:
         raise HTTPException(status_code=404, detail="candidate not found")
     return {"status": "rejected", "candidate_id": candidate_id}
+
+
+@app.get("/orion/export")
+def export_orion_events():
+    db_path = _orion_db_path()
+    if not os.path.exists(db_path):
+        raise HTTPException(status_code=404, detail="No event database found")
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM events WHERE quarantined = 0 ORDER BY created_at ASC"
+            ).fetchall()
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {e}")
+
+    def _iter():
+        for row in rows:
+            yield json.dumps(dict(row)) + "\n"
+
+    filename = f"orion_events_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.ndjson"
+    return StreamingResponse(
+        _iter(),
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/orion/training/run")
+def run_orion_training():
+    db_path = _orion_db_path()
+    if not os.path.exists(db_path):
+        raise HTTPException(status_code=404, detail="No event database found")
+
+    orion = getattr(_andromeda, "orion", None)
+    config = getattr(orion, "_cfg", None)
+    dataset_path = getattr(config, "dataset_path", "orion/data/datasets")
+
+    try:
+        store = DatasetStore(base_path=dataset_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not open dataset store: {e}")
+
+    _VALID_DOMAINS = {"vega", "rigel"}
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT task_id, skill_id, agent_id, domain, confidence,
+                       human_verified, payload, result, created_at
+                FROM events
+                WHERE quarantined = 0 AND outcome = 'success'
+                ORDER BY created_at ASC
+                """
+            ).fetchall()
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {e}")
+
+    flushed_files: list[str] = []
+    examples_written = 0
+    skipped = 0
+    for row in rows:
+        domain = row["domain"]
+        if domain not in _VALID_DOMAINS:
+            skipped += 1
+            continue
+        if not row["payload"] or not row["result"]:
+            skipped += 1
+            continue
+        example = {
+            "task_id":        row["task_id"],
+            "skill_id":       row["skill_id"],
+            "confidence":     row["confidence"],
+            "human_verified": bool(row["human_verified"]),
+            "prompt":         row["payload"],
+            "completion":     row["result"],
+            "created_at":     row["created_at"] or "",
+        }
+        store.append_example(domain, example)
+        examples_written += 1
+
+    seen_domains: set[str] = set()
+    for row in rows:
+        d = row["domain"]
+        if d in _VALID_DOMAINS and d not in seen_domains:
+            seen_domains.add(d)
+            if store.should_flush(d):
+                path = store.flush(d)
+                flushed_files.append(path)
+
+    return {
+        "status": "ok",
+        "examples_written": examples_written,
+        "skipped": skipped,
+        "dataset_files_flushed": len(flushed_files),
+        "flushed_files": flushed_files,
+    }
+
+
+@app.post("/forge/agent", status_code=201)
+def forge_agent(req: dict):
+    from core.scaffolder import AgentScaffoldParams, ForgeConflictError, scaffold_agent
+    from pydantic import ValidationError
+    try:
+        params = AgentScaffoldParams(**req)
+    except (ValidationError, TypeError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    try:
+        result = scaffold_agent(params)
+    except ForgeConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if not result.success:
+        raise HTTPException(status_code=500, detail=result.error)
+    return result.model_dump(exclude_none=True)
+
+
+@app.post("/forge/skill", status_code=201)
+def forge_skill(req: dict):
+    from core.scaffolder import ForgeConflictError, SkillScaffoldParams, scaffold_skill
+    from pydantic import ValidationError
+    try:
+        params = SkillScaffoldParams(**req)
+    except (ValidationError, TypeError) as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    try:
+        result = scaffold_skill(params)
+    except ForgeConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if not result.success:
+        raise HTTPException(status_code=500, detail=result.error)
+    return result.model_dump(exclude_none=True)
+
+
+@app.get("/config")
+def get_config():
+    import re as _re
+    import yaml as _yaml
+    path = Path("config/providers.yaml")
+    if not path.exists():
+        return {"provider": "", "model": "", "api_key_set": False, "base_url": ""}
+
+    def _resolve(val: str) -> str:
+        m = _re.match(r'^\$\{(\w+)\}$', str(val))
+        return os.environ.get(m.group(1), "") if m else str(val)
+
+    with path.open(encoding="utf-8") as f:
+        data = _yaml.safe_load(f)
+    llm = data.get("llm", {})
+    return {
+        "provider":    _resolve(llm.get("provider", "")),
+        "model":       _resolve(llm.get("model", "")),
+        "api_key_set": bool(_resolve(llm.get("api_key", ""))),
+        "base_url":    _resolve(llm.get("base_url", "")),
+    }
+
+
+class ConfigUpdateRequest(BaseModel):
+    model:    str = ""
+    base_url: str = ""
+
+
+@app.post("/config")
+def update_config(req: ConfigUpdateRequest):
+    import yaml as _yaml
+    path = Path("config/providers.yaml")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="config/providers.yaml not found")
+    with path.open(encoding="utf-8") as f:
+        data = _yaml.safe_load(f) or {}
+    llm = data.setdefault("llm", {})
+    if req.model:
+        llm["model"] = req.model
+    if req.base_url:
+        llm["base_url"] = req.base_url
+    with path.open("w", encoding="utf-8") as f:
+        _yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    return {"status": "ok"}
 
 
 @app.get("/health")
@@ -379,7 +1020,7 @@ def _count_feedback_events(db_path: str) -> int:
     try:
         with sqlite3.connect(db_path) as conn:
             cur = conn.execute(
-                "SELECT COUNT(*) FROM feedback_events WHERE quarantined = 0"
+                "SELECT COUNT(*) FROM events WHERE quarantined = 0"
             )
             row = cur.fetchone()
             return int(row[0] or 0)

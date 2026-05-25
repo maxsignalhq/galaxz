@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import textwrap
 import time
@@ -21,10 +22,51 @@ class ExecutionResult(BaseModel):
     stderr: str
     outcome: Literal["pass", "fail", "timeout", "error"]
     duration_ms: int = Field(ge=0)
+    executed_from: Literal["workspace", "sandbox"] = "sandbox"
 
 
 class ExecutionSandboxUnavailable(RuntimeError):
     pass
+
+
+def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int) -> ExecutionResult:
+    start = time.monotonic()
+    env = {**os.environ, "HOME": workspace_root}
+    try:
+        completed = subprocess.run(
+            [sys.executable, file_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            cwd=workspace_root,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return ExecutionResult(
+            exit_code=-1,
+            stdout=_coerce_output(exc.stdout),
+            stderr=_coerce_output(exc.stderr),
+            outcome="timeout",
+            duration_ms=int((time.monotonic() - start) * 1000),
+            executed_from="workspace",
+        )
+    except Exception as exc:
+        return ExecutionResult(
+            exit_code=-1,
+            stdout="",
+            stderr=str(exc),
+            outcome="error",
+            duration_ms=int((time.monotonic() - start) * 1000),
+            executed_from="workspace",
+        )
+    return ExecutionResult(
+        exit_code=completed.returncode,
+        stdout=completed.stdout or "",
+        stderr=completed.stderr or "",
+        outcome="pass" if completed.returncode == 0 else "fail",
+        duration_ms=int((time.monotonic() - start) * 1000),
+        executed_from="workspace",
+    )
 
 
 def execute_generated_output(
@@ -33,7 +75,14 @@ def execute_generated_output(
     result: dict,
     timeout_s: int = 30,
     image: str = DEFAULT_EXECUTION_IMAGE,
+    workspace_root: str | None = None,
+    file_path: str | None = None,
 ) -> ExecutionResult | None:
+    if workspace_root is not None:
+        if file_path is None:
+            return None
+        return _execute_in_workspace(file_path, workspace_root, timeout_s)
+
     files = _build_execution_files(skill_id, payload, result)
     if files is None:
         return None
@@ -69,6 +118,7 @@ def execute_generated_output(
             stderr=_coerce_output(exc.stderr),
             outcome="timeout",
             duration_ms=int((time.monotonic() - start) * 1000),
+            executed_from="sandbox",
         )
     except (FileNotFoundError, PermissionError) as exc:
         raise ExecutionSandboxUnavailable(str(exc)) from exc
@@ -81,6 +131,7 @@ def execute_generated_output(
             stderr=str(exc),
             outcome="error",
             duration_ms=int((time.monotonic() - start) * 1000),
+            executed_from="sandbox",
         )
 
     stderr = completed.stderr or ""
@@ -93,6 +144,7 @@ def execute_generated_output(
         stderr=stderr,
         outcome="pass" if completed.returncode == 0 else "fail",
         duration_ms=int((time.monotonic() - start) * 1000),
+        executed_from="sandbox",
     )
 
 

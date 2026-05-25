@@ -1,5 +1,6 @@
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass
 from typing import Optional
 
@@ -80,19 +81,28 @@ def call_llm(
             else:
                 messages = [{"role": "user", "content": instruction_prefix}] + messages
 
+    timeout_s = float(os.environ.get("LITELLM_TIMEOUT_SECONDS", "180"))
     kwargs = {
         "model": f"{config.provider}/{config.model}",
         "messages": messages,
+        "timeout": timeout_s,
     }
     if config.api_key:
         kwargs["api_key"] = config.api_key
     if config.base_url:
         kwargs["base_url"] = config.base_url
 
+    executor = ThreadPoolExecutor(max_workers=1)
     try:
-        response = litellm.completion(**kwargs)
+        future = executor.submit(litellm.completion, **kwargs)
+        response = future.result(timeout=timeout_s)
+    except TimeoutError as e:
+        future.cancel()
+        raise RuntimeError(f"LLM call timed out after {timeout_s:.1f} seconds") from e
     except Exception as e:
         raise RuntimeError(f"LLM call failed: {e}") from e
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     text = response.choices[0].message.content
     prompt_tokens = response.usage.prompt_tokens

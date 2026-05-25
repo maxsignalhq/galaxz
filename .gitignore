@@ -18,6 +18,26 @@ env/
 # Orion data
 orion/data/*.db
 orion/data/datasets/
+orion/data/health.json
+
+# Runtime databases
+data/*.db
+galaxz.db
+*.db
+
+# Memory session files
+memory/*.txt
+
+# Test / CI artifacts
+.playwright-mcp/
+.pytest_cache/
+
+# Demo / report assets (host externally — link in README)
+report/
+
+# Claude tooling
+.superpowers/
+.claude/settings.local.json
 
 # IDE
 .idea/

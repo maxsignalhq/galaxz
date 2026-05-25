@@ -1,0 +1,22 @@
+confidence:
+  completion_threshold: 0.65
+  failure_threshold: 0.40
+  parse_error_fallback: 0.75
+  weights:
+    structural_check: 0.40
+    self_critique: 0.40
+    historical_baseline: 0.20
+
+skills:
+  code_generation:
+    enabled: true
+  pr_review:
+    enabled: true
+  test_writing:
+    enabled: true
+  refactor:
+    enabled: true
+  scaffold:
+    enabled: true
+  debug_triage:
+    enabled: true

@@ -156,7 +156,8 @@ class ReviewQueue:
                 pass
 
         return {
-            "pending": counts.get("pending", 0),
+            "pending":  counts.get("pending", 0),
+            "approved": counts.get("approved", 0),
             "accepted": counts.get("accepted", 0),
             "rejected": counts.get("rejected", 0),
             "oldest_pending_age_minutes": oldest_age_minutes,

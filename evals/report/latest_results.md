@@ -1,8 +1,8 @@
 # Eval Execution Report
 
-- Started: `2026-04-27T23:34:20.406974+00:00`
-- Completed: `2026-04-27T23:34:20.497289+00:00`
-- Duration: `0.09s`
+- Started: `2026-05-09T16:34:23.801168+00:00`
+- Completed: `2026-05-09T16:34:24.151002+00:00`
+- Duration: `0.35s`
 - Scenarios: `4`
 - Passed suites: `8`
 - Failed suites: `0`
@@ -21,7 +21,7 @@
 - Check: Health Vega flow
 - Check: Hospitality Vega flow
 - Check: Retail Vega flow
-- Artifacts: `{"finance_ach_payroll": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "f145da87-eb31-47fa-b617-acbce24a43b8"}, "health_fhir_intake": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "a3426185-f71d-47c0-a89b-490fbc333b7b"}, "hospitality_booking": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "6ae70950-f3d6-4ed1-9d52-d8b4194e4dbe"}, "retail_gtin_catalog": {"bugs": 0, "feedback_stream": "galaxz.feedback.vega", "run_id": "464b1db9-8396-4b74-8248-76658c4927eb"}}`
+- Artifacts: `{"finance_ach_payroll": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "98f9e80c-de32-44a4-b051-8906ed139f19"}, "health_fhir_intake": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "c02a9084-f23f-4c37-90b7-67a98a66db77"}, "hospitality_booking": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "0dfbdf1b-0503-4c7a-91c2-dcc0e16dac58"}, "retail_gtin_catalog": {"bugs": 0, "feedback_stream": "galaxz.feedback.vega", "run_id": "ca8ffd0a-0619-43c7-9f9d-6caf98f6279d"}}`
 
 ### rigel_skills
 - Status: `passed`
@@ -39,7 +39,7 @@
 - Check: Rigel routing
 - Check: No-match routing
 - Check: Task log persistence
-- Artifacts: `{"rigel_task_id": "9623f2e9-1a5b-46a7-ba20-c3a13195b93b", "vega_task_id": "e889dea8-d1e9-4506-8ab8-6d148c7b247f"}`
+- Artifacts: `{"rigel_task_id": "406ddc59-18b7-4307-9e2b-079f8706176a", "vega_task_id": "b66e0941-fd00-45c5-be46-7c74ea3bac8a"}`
 
 ### cli_surface
 - Status: `passed`
@@ -53,14 +53,14 @@
 - Check: FastAPI task routing endpoint
 - Check: FastAPI status endpoint
 - Check: FastAPI review queue approve/reject endpoints
-- Check: FastAPI fine-tune queue approve/reject endpoints
+- Check: FastAPI fine-tune candidate approve/reject endpoints
 
 ### orion_pipeline
 - Status: `passed`
 - Check: Direct Orion ingest for accepted and rejected feedback
 - Check: Dataset curation cycle
 - Check: Heuristic cycle with routing, drift, and fine-tune signals
-- Artifacts: `{"heuristic_streams": ["aether:orion.drift_alert", "aether:orion.fine_tune_ready", "aether:routing.heuristic_update"], "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-eo56ce_s/datasets"}`
+- Artifacts: `{"heuristic_streams": ["aether:orion.drift_alert", "aether:orion.fine_tune_ready", "aether:routing.heuristic_update"], "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-_21hz_ij/datasets"}`
 
 ### feedback_handshake
 - Status: `passed`

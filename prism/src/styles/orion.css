@@ -2,9 +2,9 @@
    GALAXZ — Orion Analytics Styles
    ───────────────────────────────────────────────────────────── */
 
-/* ── Phase 3 banner ──────────────────────────────────────────── */
+/* ── Orion status banner ─────────────────────────────────────── */
 
-.phase3-banner {
+.orion-banner {
   background: rgba(255, 107, 157, 0.05);
   border: 1px solid rgba(255, 107, 157, 0.14);
   border-radius: 8px;
@@ -14,28 +14,28 @@
   gap: 14px;
 }
 
-.phase3-icon {
+.orion-icon {
   font-size: 20px;
   flex-shrink: 0;
   line-height: 1;
 }
 
-.phase3-text { flex: 1; min-width: 0; }
+.orion-text { flex: 1; min-width: 0; }
 
-.phase3-title {
+.orion-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--orion);
   margin-bottom: 4px;
 }
 
-.phase3-sub {
+.orion-sub {
   font-size: 12px;
   color: var(--t3);
   line-height: 1.6;
 }
 
-.phase3-badge {
+.orion-badge {
   font-family: var(--mono);
   font-size: 10px;
   font-weight: 500;
@@ -306,6 +306,7 @@
 
 .drift-badge-clean  { background: rgba(0, 212, 160, 0.08); color: var(--green); }
 .drift-badge-drift  { background: rgba(245, 192, 64, 0.08); color: var(--yellow); }
+.drift-badge-alert  { background: rgba(255, 77, 106, 0.08); color: var(--red); }
 
 .oa-card-footer {
   font-size: 11px;
@@ -417,3 +418,123 @@
   color: var(--t4);
   line-height: 1.55;
 }
+
+/* ── Domain breakdown ────────────────────────────────────────── */
+
+.domain-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.domain-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.domain-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t2);
+  width: 80px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.domain-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: var(--bg3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.domain-bar {
+  height: 100%;
+  background: rgba(255, 107, 157, 0.55);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.domain-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t3);
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Agent performance ───────────────────────────────────────── */
+
+.ap-header {
+  display: grid;
+  grid-template-columns: 80px 44px 1fr 1fr;
+  gap: 8px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--b1);
+  margin-bottom: 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--t4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ap-row {
+  display: grid;
+  grid-template-columns: 80px 44px 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--b1);
+}
+
+.ap-row:last-child { border-bottom: none; }
+
+.ap-agent {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ap-tasks {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t3);
+  text-align: right;
+}
+
+.ap-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ap-bar {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.ap-bar-conf { background: rgba(157, 126, 255, 0.6); }
+.ap-bar-rate { background: rgba(0, 212, 160, 0.6); }
+
+.ap-bar-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--t3);
+  width: 30px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.ap-col-agent, .ap-col-tasks { }
+.ap-col-conf, .ap-col-rate { text-align: left; }

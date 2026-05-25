@@ -1,6 +1,32 @@
 import json
+import logging
+from pathlib import Path
+from typing import Optional
+
+import yaml
 
 from agents.rigel.execution import ExecutionResult
+
+logger = logging.getLogger(__name__)
+
+_RIGEL_YAML = Path("config/rigel.yaml")
+_DEFAULT_WEIGHTS = {"structural_check": 0.40, "self_critique": 0.40, "historical_baseline": 0.20}
+
+_cached_weights: Optional[dict] = None
+
+
+def _load_weights() -> dict:
+    global _cached_weights
+    if _cached_weights is not None:
+        return _cached_weights
+    if _RIGEL_YAML.exists():
+        with open(_RIGEL_YAML, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        _cached_weights = data.get("confidence", {}).get("weights", _DEFAULT_WEIGHTS)
+    else:
+        logger.warning("config/rigel.yaml not found — using default confidence thresholds")
+        _cached_weights = _DEFAULT_WEIGHTS
+    return _cached_weights
 
 
 def _structural_check(skill_id: str, result: dict) -> float:
@@ -81,7 +107,12 @@ def score_confidence(
 ) -> dict:
     structural = _structural_check(skill_id, result)
     critique = _self_critique(skill_id, payload, result, llm_client, parse_error_fallback)
-    soft_confidence = (structural * 0.4) + (critique["score"] * 0.4) + (historical_score * 0.2)
+    w = _load_weights()
+    soft_confidence = (
+        (structural * w["structural_check"])
+        + (critique["score"] * w["self_critique"])
+        + (historical_score * w["historical_baseline"])
+    )
     composite = _calibrated_confidence(soft_confidence, execution_result)
     return {
         "confidence": round(composite, 3),

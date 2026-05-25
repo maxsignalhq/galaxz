@@ -1,0 +1,140 @@
+agent_id: lumina
+agent_name: "Lumina UI Design"
+version: "0.2.0"
+color: "#c084fc"
+
+skills:
+  - skill_id: "lumina.skill.design_system"
+    description: "Generate design system tokens and guidelines"
+    avg_confidence: 0.82
+    avg_latency_ms: 1100
+    writable: true
+    payload_defaults:
+      spec: ""
+      tone: "modern, clean"
+    steps:
+      - artifact_filename: "tokens.css"
+        artifact_language: "css"
+        artifact_type: "code"
+        strip_fences: true
+        system: |
+          You are an expert UI/UX designer and frontend engineer.
+          Output only a CSS custom properties block (no explanation, no markdown fences).
+          Define color tokens, typography tokens, spacing scale, border-radius, and shadow tokens.
+        user: |
+          Generate a complete CSS design system token file for: {spec}
+          Tone: {tone}
+          Output a :root {} block with all tokens. Raw CSS only.
+      - artifact_filename: "design_guidelines.md"
+        artifact_language: "markdown"
+        artifact_type: "report"
+        system: "You are an expert UI/UX designer. Be concise and structured."
+        user: |
+          Write a brief design system usage guideline for: {spec}
+          Tone: {tone}
+          Cover: color usage rules, typography hierarchy, spacing principles. Max 200 words. Plain text.
+    summary_template: "Design system tokens and guidelines for: {spec}"
+
+  - skill_id: "lumina.skill.component_generation"
+    description: "Generate accessible UI components (React/HTML)"
+    avg_confidence: 0.80
+    avg_latency_ms: 1200
+    writable: true
+    payload_defaults:
+      spec: ""
+      component_name: "MyComponent"
+    steps:
+      - artifact_filename: "{component_name}.tsx"
+        artifact_language: "typescript"
+        artifact_type: "code"
+        strip_fences: true
+        system: |
+          You are an expert TypeScript React (TSX) UI engineer.
+          Output only the complete component code — no explanation, no markdown fences.
+        user: |
+          Generate a complete, production-ready TypeScript React (TSX) component named '{component_name}'.
+          Spec: {spec}
+          Requirements: accessible (aria labels), responsive, no external dependencies beyond React.
+          Output raw code only.
+    summary_template: "Generated TSX component: {component_name}"
+
+  - skill_id: "lumina.skill.accessibility_audit"
+    description: "Audit UI code for WCAG 2.1 AA accessibility issues"
+    avg_confidence: 0.85
+    avg_latency_ms: 900
+    writable: false
+    payload_defaults:
+      spec: ""
+      code: ""
+      context_description: ""
+    steps:
+      - artifact_filename: "accessibility_report.md"
+        artifact_language: "markdown"
+        artifact_type: "report"
+        system: |
+          You are an accessibility expert (WCAG 2.1 AA).
+          Respond in structured plain text with sections:
+          ISSUES (numbered list), SEVERITY (Critical/Major/Minor per issue),
+          RECOMMENDATIONS (actionable fixes), SCORE (0-100).
+        user: |
+          Audit the following UI code/description for accessibility issues:
+
+          {code}{spec}
+          {context_description}
+
+          Be specific. Reference WCAG criteria where relevant.
+    summary_template: "Accessibility audit complete — see report for issues and recommendations."
+
+  - skill_id: "lumina.skill.ux_review"
+    description: "Review UX flows and recommend improvements"
+    avg_confidence: 0.83
+    avg_latency_ms: 850
+    writable: false
+    payload_defaults:
+      spec: ""
+      description: ""
+      user_goal: "complete the primary task efficiently"
+    steps:
+      - artifact_filename: "ux_review.md"
+        artifact_language: "markdown"
+        artifact_type: "report"
+        system: |
+          You are a senior UX designer.
+          Structure your review with sections:
+          STRENGTHS, FRICTION POINTS, IMPROVEMENTS (prioritised), QUICK WINS.
+          Be concise and actionable.
+        user: |
+          Review the following UI/UX design or flow:
+
+          {description}{spec}
+
+          User goal: {user_goal}
+
+          Identify friction points and provide prioritised improvements.
+    summary_template: "UX review complete."
+
+  - skill_id: "lumina.skill.style_guide"
+    description: "Generate visual brand style guide in markdown"
+    avg_confidence: 0.81
+    avg_latency_ms: 950
+    writable: true
+    payload_defaults:
+      spec: ""
+      brand_name: "the brand"
+      audience: "general users"
+    steps:
+      - artifact_filename: "{brand_name}_style_guide.md"
+        artifact_language: "markdown"
+        artifact_type: "report"
+        system: |
+          You are a brand and UI design expert.
+          Generate a concise visual style guide in structured markdown.
+          Include sections: Overview, Color Palette, Typography, Iconography,
+          Spacing & Layout, Voice & Tone, Do's and Don'ts.
+        user: |
+          Generate a visual style guide for {brand_name}.
+          Brand/product description: {spec}
+          Target audience: {audience}
+
+          Format as markdown with clear section headers.
+    summary_template: "Style guide generated for {brand_name}"

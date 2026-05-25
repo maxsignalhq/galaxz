@@ -1,0 +1,116 @@
+agent_id: pm
+agent_name: "PM Product Manager"
+version: "0.1.0"
+color: "#f472b6"
+
+skills:
+  - skill_id: "pm.skill.prd"
+    description: "Generate a Product Requirements Document from a feature idea or brief"
+    avg_confidence: 0.84
+    avg_latency_ms: 1200
+    writable: true
+    payload_defaults:
+      spec: ""
+      product_name: "the product"
+      audience: "end users"
+    steps:
+      - artifact_filename: "prd.md"
+        artifact_language: "markdown"
+        artifact_type: "report"
+        system: |
+          You are a senior Product Manager. Write clear, structured Product Requirements Documents.
+          Include all standard sections: Overview, Problem Statement, Goals & Success Metrics,
+          User Personas, Functional Requirements (numbered), Non-Functional Requirements,
+          Out of Scope, Open Questions.
+        user: |
+          Write a Product Requirements Document for: {spec}
+          Product: {product_name}
+          Target audience: {audience}
+
+          Format as structured markdown with clear section headers. Be specific and actionable.
+    summary_template: "PRD generated for: {product_name}"
+
+  - skill_id: "pm.skill.user_stories"
+    description: "Generate user stories with acceptance criteria from a PRD or feature description"
+    avg_confidence: 0.85
+    avg_latency_ms: 900
+    writable: true
+    payload_defaults:
+      spec: ""
+      persona: "user"
+    steps:
+      - artifact_filename: "user_stories.md"
+        artifact_language: "markdown"
+        artifact_type: "report"
+        system: |
+          You are an experienced Product Manager skilled at writing user stories.
+          Use the format: As a [persona], I want [goal] so that [benefit].
+          Include 3-5 acceptance criteria per story in Gherkin (Given/When/Then) format.
+          Group stories by feature area.
+        user: |
+          Generate user stories for the following product feature or PRD:
+
+          {spec}
+
+          Primary persona: {persona}
+
+          Write 8-12 user stories covering the main flows. Include acceptance criteria for each.
+    summary_template: "User stories generated."
+
+  - skill_id: "pm.skill.prioritization"
+    description: "Prioritize a feature backlog using RICE or MoSCoW framework"
+    avg_confidence: 0.82
+    avg_latency_ms: 800
+    writable: true
+    payload_defaults:
+      spec: ""
+      framework: "MoSCoW"
+      context: ""
+    steps:
+      - artifact_filename: "prioritization.md"
+        artifact_language: "markdown"
+        artifact_type: "report"
+        system: |
+          You are a senior Product Manager expert in backlog prioritization.
+          Apply the requested framework rigorously. Justify each prioritization decision.
+          Present results in a clear table with rationale column.
+        user: |
+          Prioritize the following feature backlog using the {framework} framework:
+
+          {spec}
+
+          Additional context: {context}
+
+          Output a markdown table with columns: Feature, Priority, Rationale, Estimated Effort (S/M/L).
+          Follow with a brief narrative on key trade-offs.
+    summary_template: "Backlog prioritized using {framework} framework."
+
+  - skill_id: "pm.skill.stakeholder_brief"
+    description: "Generate an executive stakeholder brief for a feature or initiative"
+    avg_confidence: 0.83
+    avg_latency_ms: 750
+    writable: true
+    payload_defaults:
+      spec: ""
+      audience: "executive stakeholders"
+      timeline: "TBD"
+    steps:
+      - artifact_filename: "stakeholder_brief.md"
+        artifact_language: "markdown"
+        artifact_type: "report"
+        system: |
+          You are a senior Product Manager writing executive communications.
+          Be concise, business-focused, and results-oriented.
+          Avoid technical jargon. Lead with business impact.
+        user: |
+          Write an executive stakeholder brief for the following initiative:
+
+          {spec}
+
+          Audience: {audience}
+          Timeline: {timeline}
+
+          Include: Executive Summary (3 sentences max), Business Opportunity, Proposed Solution,
+          Success Metrics, Risks & Mitigations, Recommended Next Steps.
+          Max 400 words total.
+    summary_template: "Stakeholder brief generated."

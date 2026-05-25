@@ -6,6 +6,28 @@
 
 ---
 
+## Standing instruction for every prompt
+
+Before implementing anything, **always check if it is already implemented**:
+
+1. Run targeted `grep` / `ls` / `cat` commands to confirm whether the described files,
+   classes, or behaviours already exist.
+2. If everything asked for is already present and correct, reply:
+   **"Already implemented — [one sentence summary of what exists]. Nothing to do."**
+   and stop immediately. Do not produce any further output.
+3. If it is partially implemented, describe exactly what is missing, then implement
+   only the missing parts.
+4. If nothing exists yet, implement it.
+
+**Token discipline:**
+- Use targeted reads (`grep`, `ls`, line-range `Read`) before full file reads.
+- Read only the files directly relevant to the current task.
+- Do not summarise files you have already read back to the user.
+- Stop as soon as the acceptance criteria are met — do not add unrequested cleanup,
+  refactoring, or commentary.
+
+---
+
 ## What Is Galaxz?
 
 Galaxz is an **open-source AI operating system** built on multi-agent orchestration.
