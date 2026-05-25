@@ -8,6 +8,11 @@ from core.contracts import SkillDefinition, SkillManifest
 from core.pulsar.registry import PulsarRegistry
 
 HEARTBEAT_STREAM = "galaxz.pulsar.heartbeat"
+LEGACY_SKILL_ALIASES = {
+    "requirements_to_test_cases": "vega.skill.requirements_to_test_cases",
+    "test_case_execution": "vega.skill.test_case_execution",
+    "defect_reporting": "vega.skill.defect_reporting",
+}
 
 
 def _utc_now_iso() -> str:
@@ -93,21 +98,33 @@ class VegaAgent:
         self.registry.register(self._build_manifest())
 
     def _build_manifest(self) -> SkillManifest:
+        skill_defs = [
+            SkillDefinition(
+                skill_id=skill_id,
+                description=skill_def["description"],
+                input_schema=skill_def["input_schema"],
+                output_schema=skill_def["output_schema"],
+                avg_confidence=skill_def["avg_confidence"],
+                avg_latency_ms=skill_def["avg_latency_ms"],
+            )
+            for skill_id, skill_def in self.SKILLS.items()
+        ]
+        skill_defs.extend(
+            SkillDefinition(
+                skill_id=legacy_skill_id,
+                description=self.SKILLS[canonical_skill_id]["description"],
+                input_schema=self.SKILLS[canonical_skill_id]["input_schema"],
+                output_schema=self.SKILLS[canonical_skill_id]["output_schema"],
+                avg_confidence=self.SKILLS[canonical_skill_id]["avg_confidence"],
+                avg_latency_ms=self.SKILLS[canonical_skill_id]["avg_latency_ms"],
+            )
+            for legacy_skill_id, canonical_skill_id in LEGACY_SKILL_ALIASES.items()
+        )
         return SkillManifest(
             agent_id=self.AGENT_ID,
             agent_name=self.AGENT_NAME,
             version=self.VERSION,
-            skills=[
-                SkillDefinition(
-                    skill_id=skill_id,
-                    description=skill_def["description"],
-                    input_schema=skill_def["input_schema"],
-                    output_schema=skill_def["output_schema"],
-                    avg_confidence=skill_def["avg_confidence"],
-                    avg_latency_ms=skill_def["avg_latency_ms"],
-                )
-                for skill_id, skill_def in self.SKILLS.items()
-            ],
+            skills=skill_defs,
             health_endpoint=self.HEALTH_ENDPOINT,
             heartbeat_interval_s=30,
         )

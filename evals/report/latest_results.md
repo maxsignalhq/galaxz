@@ -1,8 +1,8 @@
 # Eval Execution Report
 
-- Started: `2026-05-09T16:34:23.801168+00:00`
-- Completed: `2026-05-09T16:34:24.151002+00:00`
-- Duration: `0.35s`
+- Started: `2026-05-25T16:06:42.634518+00:00`
+- Completed: `2026-05-25T16:06:42.749059+00:00`
+- Duration: `0.115s`
 - Scenarios: `4`
 - Passed suites: `8`
 - Failed suites: `0`
@@ -21,7 +21,7 @@
 - Check: Health Vega flow
 - Check: Hospitality Vega flow
 - Check: Retail Vega flow
-- Artifacts: `{"finance_ach_payroll": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "98f9e80c-de32-44a4-b051-8906ed139f19"}, "health_fhir_intake": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "c02a9084-f23f-4c37-90b7-67a98a66db77"}, "hospitality_booking": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "0dfbdf1b-0503-4c7a-91c2-dcc0e16dac58"}, "retail_gtin_catalog": {"bugs": 0, "feedback_stream": "galaxz.feedback.vega", "run_id": "ca8ffd0a-0619-43c7-9f9d-6caf98f6279d"}}`
+- Artifacts: `{"finance_ach_payroll": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "0114d54d-3f22-4f93-a447-5b57a4cbdaeb"}, "health_fhir_intake": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "4b9f812d-b992-4ae4-b637-104261111116"}, "hospitality_booking": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "7b558f21-6ebc-471b-a05b-2e21b195394a"}, "retail_gtin_catalog": {"bugs": 0, "feedback_stream": "galaxz.feedback.vega", "run_id": "68ab02ce-82f6-412f-abfa-3146fbbdbc01"}}`
 
 ### rigel_skills
 - Status: `passed`
@@ -39,7 +39,7 @@
 - Check: Rigel routing
 - Check: No-match routing
 - Check: Task log persistence
-- Artifacts: `{"rigel_task_id": "406ddc59-18b7-4307-9e2b-079f8706176a", "vega_task_id": "b66e0941-fd00-45c5-be46-7c74ea3bac8a"}`
+- Artifacts: `{"rigel_task_id": "284d8910-9a78-45ef-814e-3a7349aaa3c3", "vega_task_id": "17d5d4cf-8357-4728-a771-c1b4aea75382"}`
 
 ### cli_surface
 - Status: `passed`
@@ -60,7 +60,7 @@
 - Check: Direct Orion ingest for accepted and rejected feedback
 - Check: Dataset curation cycle
 - Check: Heuristic cycle with routing, drift, and fine-tune signals
-- Artifacts: `{"heuristic_streams": ["aether:orion.drift_alert", "aether:orion.fine_tune_ready", "aether:routing.heuristic_update"], "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-_21hz_ij/datasets"}`
+- Artifacts: `{"heuristic_streams": ["aether:orion.drift_alert", "aether:orion.fine_tune_ready", "aether:routing.heuristic_update"], "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-t_gvlwe8/datasets"}`
 
 ### feedback_handshake
 - Status: `passed`

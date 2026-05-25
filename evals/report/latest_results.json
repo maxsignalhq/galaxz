@@ -1,7 +1,7 @@
 {
-  "started_at": "2026-05-09T16:34:23.801168+00:00",
-  "completed_at": "2026-05-09T16:34:24.151002+00:00",
-  "duration_seconds": 0.35,
+  "started_at": "2026-05-25T16:06:42.634518+00:00",
+  "completed_at": "2026-05-25T16:06:42.749059+00:00",
+  "duration_seconds": 0.115,
   "dataset_sources": [
     {
       "domain": "finance",
@@ -52,22 +52,22 @@
       "warnings": [],
       "artifacts": {
         "finance_ach_payroll": {
-          "run_id": "98f9e80c-de32-44a4-b051-8906ed139f19",
+          "run_id": "0114d54d-3f22-4f93-a447-5b57a4cbdaeb",
           "feedback_stream": "galaxz.feedback.vega",
           "bugs": 1
         },
         "health_fhir_intake": {
-          "run_id": "c02a9084-f23f-4c37-90b7-67a98a66db77",
+          "run_id": "4b9f812d-b992-4ae4-b637-104261111116",
           "feedback_stream": "galaxz.feedback.vega",
           "bugs": 1
         },
         "hospitality_booking": {
-          "run_id": "0dfbdf1b-0503-4c7a-91c2-dcc0e16dac58",
+          "run_id": "7b558f21-6ebc-471b-a05b-2e21b195394a",
           "feedback_stream": "galaxz.feedback.vega",
           "bugs": 1
         },
         "retail_gtin_catalog": {
-          "run_id": "ca8ffd0a-0619-43c7-9f9d-6caf98f6279d",
+          "run_id": "68ab02ce-82f6-412f-abfa-3146fbbdbc01",
           "feedback_stream": "galaxz.feedback.vega",
           "bugs": 0
         }
@@ -103,8 +103,8 @@
       ],
       "warnings": [],
       "artifacts": {
-        "vega_task_id": "b66e0941-fd00-45c5-be46-7c74ea3bac8a",
-        "rigel_task_id": "406ddc59-18b7-4307-9e2b-079f8706176a"
+        "vega_task_id": "17d5d4cf-8357-4728-a771-c1b4aea75382",
+        "rigel_task_id": "284d8910-9a78-45ef-814e-3a7349aaa3c3"
       },
       "error": null
     },
@@ -149,7 +149,7 @@
           "aether:orion.fine_tune_ready",
           "aether:routing.heuristic_update"
         ],
-        "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-_21hz_ij/datasets"
+        "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-t_gvlwe8/datasets"
       },
       "error": null
     },

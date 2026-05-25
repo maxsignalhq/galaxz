@@ -43,7 +43,7 @@ test.describe('Dev Console', () => {
     await page.locator('.agent-item').filter({ hasText: 'vega' }).click();
     await expect(page.locator('.detail-type')).toHaveText('Vega QA Agent');
     await page.getByRole('button', { name: 'Skills' }).click();
-    await expect(page.locator('.sk-id').filter({ hasText: 'requirements_to_test_cases' })).toBeVisible();
+    await expect(page.locator('.sk-id').filter({ hasText: /^requirements_to_test_cases$/ })).toBeVisible();
 
     await page.locator('.detail-tabs').getByRole('button', { name: 'Logs' }).click();
     await expect(page.getByText('vega · live log output')).toBeVisible();

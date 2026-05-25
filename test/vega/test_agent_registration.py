@@ -1,6 +1,7 @@
 from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.task_log import TaskLog
 from agents.vega.agent import VegaAgent
+from core.contracts import RefineryFeedbackEvent, validate_feedback_event
 from core.pulsar.registry import PulsarRegistry
 
 
@@ -28,6 +29,34 @@ def test_pulsar_discovers_vega_for_requirements_to_test_cases(tmp_path):
 
     matches = registry.get_agents_for_skill("vega.skill.requirements_to_test_cases")
     assert [agent.agent_id for agent in matches] == ["vega"]
+
+
+def test_pulsar_discovers_vega_for_legacy_qa_skill_ids(tmp_path):
+    registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
+
+    VegaAgent(registry)
+
+    assert [agent.agent_id for agent in registry.get_agents_for_skill("requirements_to_test_cases")] == ["vega"]
+    assert [agent.agent_id for agent in registry.get_agents_for_skill("defect_reporting")] == ["vega"]
+
+
+def test_vega_feedback_accepts_emitted_legacy_skill_ids(tmp_path):
+    registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
+
+    VegaAgent(registry)
+
+    manifest = registry.get_agent("vega")
+    event = RefineryFeedbackEvent(
+        task_id="00000000-0000-0000-0000-000000000001",
+        agent_id="vega",
+        skill="requirements_to_test_cases",
+        outcome="success",
+        confidence_score=0.88,
+        latency_ms=10,
+    )
+
+    assert manifest is not None
+    assert validate_feedback_event(event, manifest) == event
 
 
 def test_andromeda_routes_requirements_to_test_cases_via_registry(monkeypatch, tmp_path):
