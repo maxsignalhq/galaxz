@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
 
-> **Demo:** [Watch the walkthrough →](https://youtu.be/PLACEHOLDER)
+<video src="report/galaxz-ui-walkthrough.webm" controls width="100%"></video>
 
 ---
 
