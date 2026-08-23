@@ -55,9 +55,14 @@ def _after_load_check(state: AndromedaState) -> str:
 def _make_after_execute(completion_threshold: float, failure_threshold: float):
     def _after_execute(state: AndromedaState) -> str:
         confidence = state.get("confidence") or 0.0
+        # A caller-supplied TaskContract.confidence_threshold overrides the agent's
+        # global default completion threshold; the failure threshold stays global.
+        threshold = state.get("confidence_threshold")
+        if threshold is None:
+            threshold = completion_threshold
         if state.get("status") == "failed":
             return "escalate"
-        if confidence >= completion_threshold:
+        if confidence >= threshold:
             return "complete"
         if confidence >= failure_threshold:
             return "handle_failure"
@@ -319,6 +324,7 @@ class Andromeda:
             timeout_ms=task.deadline_ms or 30000,
             status="routing",
             issued_at=task.created_at.isoformat(),
+            confidence_threshold=task.confidence_threshold,
         )
 
         self.task_log.write(initial_state.model_copy(update={"status": "received"}))
