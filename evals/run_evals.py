@@ -28,6 +28,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import cli.run as cli_run
 import services.andromeda_service as andromeda_service
 from agents.andromeda.orchestrator import Andromeda
+from core.artifacts.store import ArtifactStore
 from agents.andromeda.task_log import TaskLog
 from agents.rigel.agent import RigelAgent
 from agents.rigel.config import RigelConfig
@@ -414,6 +415,7 @@ def run_andromeda_eval(corpus: DeterministicCorpus) -> EvalCaseResult:
     with TemporaryDirectory(prefix="galaxz-eval-router-") as temp_dir:
         registry = PulsarRegistry(db_path=str(Path(temp_dir) / "pulsar.db"))
         task_log = TaskLog(db_path=str(Path(temp_dir) / "tasks.db"))
+        artifact_store = ArtifactStore(db_path=str(Path(temp_dir) / "artifacts.db"))
         vega = VegaAgent(registry)
         fake_aether = CapturingAether()
         with ExitStack() as stack:
@@ -439,6 +441,7 @@ def run_andromeda_eval(corpus: DeterministicCorpus) -> EvalCaseResult:
                 registry,
                 task_log,
                 agents={"vega": vega, "rigel": rigel},
+                artifact_store=artifact_store,
             )
             vega_state = router.route(
                 task_type="requirements_to_test_cases",
@@ -852,6 +855,7 @@ async def _run_feedback_handshake_async(dataset: dict[str, Any], corpus: Determi
         temp_root = Path(temp_dir)
         registry = PulsarRegistry(db_path=str(temp_root / "pulsar.db"))
         task_log = TaskLog(db_path=str(temp_root / "tasks.db"))
+        artifact_store = ArtifactStore(db_path=str(temp_root / "artifacts.db"))
         config = OrionConfig(
             redis_url="redis://unused",
             db_path=str(temp_root / "events.db"),
@@ -881,7 +885,9 @@ async def _run_feedback_handshake_async(dataset: dict[str, Any], corpus: Determi
                 rigel_config=RigelConfig(execution_calibration_enabled=False, _env_file=None),
             )
             rigel.llm = corpus.rigel_llm
-            router = Andromeda(registry, task_log, agents={"vega": vega, "rigel": rigel})
+            router = Andromeda(
+                registry, task_log, agents={"vega": vega, "rigel": rigel}, artifact_store=artifact_store
+            )
 
             vega_state = router.route(
                 task_type="defect_reporting",

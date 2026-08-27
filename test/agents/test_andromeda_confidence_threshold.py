@@ -2,6 +2,7 @@ import pytest
 
 from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.task_log import TaskLog
+from core.artifacts.store import ArtifactStore
 from core.contracts import SkillDefinition, SkillManifest, TaskContract
 from core.pulsar.registry import PulsarRegistry
 
@@ -41,6 +42,7 @@ def _route_with_confidence(registry, tmp_path, confidence, confidence_threshold)
         registry=registry,
         task_log=TaskLog(db_path=str(tmp_path / "tasks.db")),
         agents={"fake": FakeConfidenceAgent(confidence)},
+        artifact_store=ArtifactStore(db_path=str(tmp_path / "artifacts.db")),
     )
     task = TaskContract(
         origin="test",
