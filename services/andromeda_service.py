@@ -20,6 +20,7 @@ from agents.andromeda.middleware.auth import ApiKeyMiddleware
 from agents.andromeda.orchestrator import Andromeda
 from services.file_writer import FileWriter
 from core.aether.client import AetherClient, get_aether_client
+from core.artifacts.store import identity_key
 from core.contracts import TaskContract
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
@@ -104,6 +105,12 @@ class CandidateReviewRequest(BaseModel):
 
 class TaskFeedbackRequest(BaseModel):
     outcome: str  # "accepted" | "rejected"
+
+
+class ArtifactRollbackRequest(BaseModel):
+    path: str
+    workspace_root: str = ""
+    version: int
 
 
 _SHORT_SKILL_ALIASES = {
@@ -516,6 +523,69 @@ def get_task_stats():
 def get_task_throughput(hours: int = 24):
     hours = max(1, min(hours, 168))
     return _andromeda.task_log.throughput(hours)
+
+
+@app.get("/artifacts")
+def list_artifacts():
+    return _andromeda.artifact_store.list_files()
+
+
+@app.get("/artifacts/history")
+def get_artifact_history(path: str, workspace_root: str = ""):
+    key = identity_key(workspace_root, path)
+    history = _andromeda.artifact_store.history(key)
+    if not history:
+        raise HTTPException(status_code=404, detail="no versions found for this path")
+    return history
+
+
+@app.get("/artifacts/diff")
+def get_artifact_diff(path: str, workspace_root: str = "", from_: int | None = None, to: int | None = None):
+    key = identity_key(workspace_root, path)
+    latest = _andromeda.artifact_store.latest_version_number(key)
+    if latest is None:
+        raise HTTPException(status_code=404, detail="no versions found for this path")
+
+    from_version = from_ if from_ is not None else max(latest - 1, 1)
+    to_version = to if to is not None else latest
+
+    try:
+        diff_text = _andromeda.artifact_store.diff(key, from_version, to_version)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="requested version not found")
+
+    return {"diff": diff_text, "from": from_version, "to": to_version}
+
+
+@app.post("/artifacts/rollback")
+def rollback_artifact(req: ArtifactRollbackRequest):
+    key = identity_key(req.workspace_root, req.path)
+    row = _andromeda.artifact_store.get_version(key, req.version)
+    if row is None:
+        raise HTTPException(status_code=404, detail="version not found")
+
+    workspace_path = _read_workspace_path()
+    written = False
+    if workspace_path:
+        try:
+            writer = FileWriter(workspace_root=workspace_path)
+            writer.write(
+                artifacts=[
+                    {
+                        "filename": req.path,
+                        "content": row["content"],
+                        "artifact_type": row["artifact_type"] or "",
+                        "language": row["language"] or "",
+                    }
+                ]
+            )
+            written = True
+        except FileNotFoundError:
+            logger.warning(
+                "workspace_path %s does not exist — skipping rollback write", workspace_path
+            )
+
+    return {"content": row["content"], "version": req.version, "written": written}
 
 
 @app.get("/status")
