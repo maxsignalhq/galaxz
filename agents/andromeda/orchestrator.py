@@ -15,6 +15,8 @@ from agents.andromeda.nodes import (
     make_handle_failure_node,
     make_load_check_node,
 )
+from agents.andromeda.goal_runner import GoalRunner
+from agents.andromeda.planner import GoalPlanner
 from agents.andromeda.review_queue import ReviewQueue
 from agents.andromeda.state import AndromedaState
 from agents.andromeda.task_log import TaskLog
@@ -22,6 +24,7 @@ from agents.rigel.agent import RigelAgent
 from agents.vega.agent import VegaAgent
 from core.artifacts.store import ArtifactStore
 from core.contracts import TaskContract
+from core.goals.store import GoalStore
 from core.pulsar.registry import PulsarRegistry
 from orion.core.weights_loader import RoutingWeightsLoader
 from workspace.config import load_workspace_config
@@ -156,11 +159,15 @@ class Andromeda:
         agents: Optional[dict[str, object]] = None,
         review_queue: Optional[ReviewQueue] = None,
         artifact_store: Optional[ArtifactStore] = None,
+        goal_store: Optional[GoalStore] = None,
     ):
         self.registry = registry
         self.task_log = task_log
         self.review_queue = review_queue or ReviewQueue()
         self.artifact_store = artifact_store or ArtifactStore()
+        self.goal_store = goal_store or GoalStore()
+        self.goal_planner = GoalPlanner(registry)
+        self.goal_runner = GoalRunner(self, self.goal_store)
         self.routing_weights = RoutingWeightsLoader(str(ROUTING_WEIGHTS_PATH))
         self._workspace_config = load_workspace_config()
         self._routing_weights_stop = threading.Event()
