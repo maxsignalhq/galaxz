@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS review_queue (
     status         TEXT    NOT NULL DEFAULT 'pending',
     created_at     TEXT    NOT NULL,
     reviewed_at    TEXT,
-    reviewer_notes TEXT
+    reviewer_notes TEXT,
+    goal_id        TEXT
 )
 """
 
@@ -28,12 +29,13 @@ _MIGRATE_STMTS = [
     "ALTER TABLE review_queue ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE review_queue ADD COLUMN agent_output TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE review_queue ADD COLUMN sla_deadline TEXT",
+    "ALTER TABLE review_queue ADD COLUMN goal_id TEXT",
 ]
 
 _COLUMNS = [
     "id", "task_id", "task_type", "skill_id", "agent_id", "agent_output",
     "sla_deadline", "confidence", "payload", "status", "created_at",
-    "reviewed_at", "reviewer_notes",
+    "reviewed_at", "reviewer_notes", "goal_id",
 ]
 
 
@@ -75,6 +77,7 @@ class ReviewQueue:
         agent_id: str = "",
         agent_output: Optional[dict] = None,
         sla_deadline: Optional[str] = None,
+        goal_id: Optional[str] = None,
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         with self._lock:
@@ -82,13 +85,13 @@ class ReviewQueue:
                 """
                 INSERT OR IGNORE INTO review_queue
                     (task_id, task_type, skill_id, agent_id, agent_output, sla_deadline,
-                     confidence, payload, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                     confidence, payload, status, created_at, goal_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 """,
                 (
                     task_id, task_type, skill_id, agent_id,
                     json.dumps(agent_output or {}), sla_deadline,
-                    confidence, json.dumps(payload), now,
+                    confidence, json.dumps(payload), now, goal_id,
                 ),
             )
             self._conn.commit()
