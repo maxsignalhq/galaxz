@@ -34,6 +34,8 @@ sub-threshold result, and reports rolled-up status.
 
 - Parallel task execution — v1 runs ready tasks sequentially; the DAG only
   determines *order and readiness*, not concurrency.
+- Synchronous goal execution — `POST /goals` returns after *planning*; the DAG
+  runs on a background daemon thread (see Executor).
 - Re-planning / plan editing after creation. A rejected plan is abandoned; the
   caller submits a new objective.
 - Goal-level Aether events / Orion feedback for the plan itself (task-level
@@ -115,7 +117,8 @@ Methods:
   `payload`, and `depends_on` given as **local integer indices** into the flat
   task list. The planner resolves those to `PlannedTask.task_id` UUIDs and
   rejects any cycle or out-of-range index (raises `PlanValidationError`).
-- Every `skill` is validated against the registry; an unknown skill →
+- Every `skill` is validated against the set of registered skill ids
+  (`{s.skill_id for s in registry.get_all_skills()}`); an unknown skill →
   `PlanValidationError`.
 - `plan_confidence` is taken from the model output, clamped to `[0, 1]`, and
   recomputed-guarded (never trust it blindly — if absent, default `0.5`).
@@ -124,25 +127,39 @@ Methods:
 
 `GoalRunner(andromeda: Andromeda, store: GoalStore)`.
 
-`run(goal_id)`:
+`run(goal_id)` — **guarded, non-reentrant**:
 
-1. Load the goal tree. Set goal → `running`.
+0. Compare-and-set the goal status: `ready | paused` → `running` in a single
+   `UPDATE ... WHERE goal_id = ? AND status IN ('ready','paused')`. If it
+   updated 0 rows, another runner already owns this goal — return immediately.
+   This is the real concurrency guard; the endpoint's 409 is just a friendlier
+   early message.
+1. Load the goal tree.
 2. Loop: find all `pending` tasks whose `depends_on` are all `complete`.
-   - None ready and tasks still `pending` with unmet deps → this only happens
-     if a dependency `failed`/`escalated`; stop (goal already `paused`).
+   - None ready but `pending` tasks remain with unmet deps → a dependency is
+     `failed`/`escalated`/`no_agent`; set goal → `paused`/`failed` accordingly
+     and stop.
    - None ready and no `pending` left → all done.
 3. For each ready task (sequential): build a `TaskContract`
    (`origin=f"goal:{goal_id}"`, `skill`, `payload`,
    `confidence_threshold=goal.confidence_threshold`) and call
-   `andromeda.route(task)`.
-   - Route returns `complete` with confidence ≥ threshold → `update_task(status="complete", ...)`.
-   - Route escalated, failed, or `review_pending` → `update_task(status="escalated"/"failed", ...)`,
-     set goal → `paused`, and **stop the loop**. `Andromeda.route()` has
-     already enqueued the task to the `ReviewQueue`; `GoalRunner` additionally
-     records `goal_id` + `task_id` on that queue item (new optional columns on
-     the review-queue store) so the operator UI can link back.
+   `andromeda.route(task)`. Classify the returned state:
+   - `complete` with confidence ≥ threshold → `update_task(status="complete", ...)`.
+   - `escalated` or `review_pending` (sub-threshold but recoverable) →
+     `update_task(status="escalated", ...)`, goal → `paused`, **stop**.
+     `Andromeda.route()` has already enqueued the task to the `ReviewQueue`;
+     `GoalRunner` stamps `goal_id` onto that queue row (`task_id` is already a
+     column) so the operator UI can link back.
+   - `failed` or `no_agent_found` → `update_task(status="failed", ...)`,
+     goal → `failed`, **stop**.
 4. When the loop drains with every task `complete`: goal → `complete`.
 5. `rollup` sets goal confidence = min task confidence.
+
+`GoalRunner.run` is always dispatched on a `threading.Thread(daemon=True)` — by
+the `POST /goals` handler after planning, by the review-resume hook, and by
+`POST /goals/{id}/resume`. `Andromeda` already runs a daemon thread for
+routing-weights polling, so this is in-idiom. `GoalStore`'s SQLite connection is
+opened with `check_same_thread=False` (as `ArtifactStore` does).
 
 ### Resuming after escalation
 
@@ -159,16 +176,17 @@ that just calls `GoalRunner.run` (useful if the process restarted mid-goal).
 
 | method + path | body | behaviour |
 |---|---|---|
-| `POST /goals` | `{objective, confidence_threshold?}` (default 0.65) | create goal → `GoalPlanner.plan` → `save_plan`. If `plan_confidence < confidence_threshold`: goal stays `paused`, enqueue a review item, return the tree with `plan_pending_review: true`. Else `GoalRunner.run` executes synchronously and the response is the final tree + rollup. |
+| `POST /goals` | `{objective, confidence_threshold?}` (default 0.65) | create goal → `GoalPlanner.plan` → `save_plan` (synchronous — planning is one LLM call). If `plan_confidence < confidence_threshold`: goal stays `paused`, enqueue a review item, return the tree with `plan_pending_review: true`. Else spawn `GoalRunner.run` on a daemon thread and return `202` with the freshly-planned tree (status `running`). |
 | `GET /goals` | — | `list_goals()` |
-| `GET /goals/{goal_id}` | — | `goal_tree()` + `rollup()` |
-| `POST /goals/{goal_id}/resume` | — | `GoalRunner.run(goal_id)`; 409 if goal not `paused`/`ready` |
+| `GET /goals/{goal_id}` | — | `goal_tree()` + `rollup()` — this is what the UI polls |
+| `POST /goals/{goal_id}/resume` | — | spawn `GoalRunner.run(goal_id)` on a daemon thread; `409` if goal not `paused`/`ready` |
 
 All four are **protected** routes (not added to `_EXEMPT_ROUTES`).
 
-Synchronous execution matches the existing `POST /task` model (that endpoint also
-routes inline). Long goals will hold the request open; acceptable for v1 and
-consistent with the rest of the service. A background-job queue is a later concern.
+Execution is on a daemon thread rather than inline (unlike `POST /task`) because a
+goal is many routes and would hold the connection open for minutes. The UI polls
+`GET /goals/{id}`. A durable background-job queue (survives process restart) is a
+later concern; `POST /goals/{id}/resume` is the manual recovery lever until then.
 
 ## Boot wiring
 
@@ -221,8 +239,11 @@ New: `core/goals/__init__.py`, `core/goals/store.py`,
 
 Modified: `core/contracts/contracts.py` (+ `core/contracts/__init__.py` exports),
 `agents/andromeda/orchestrator.py` (boot wiring),
-`agents/andromeda/review_queue.py` (optional `goal_id`/`task_id` columns +
-resume hook), `services/andromeda_service.py` (4 endpoints + review-resume hook),
+`agents/andromeda/review_queue.py` (one new nullable `goal_id` column — `task_id`
+already exists — added via `PRAGMA table_info` + `ALTER TABLE ADD COLUMN` on
+init since existing dev DBs won't get it from `CREATE TABLE IF NOT EXISTS`; plus
+the approve/reject resume hook), `services/andromeda_service.py` (4 endpoints +
+review-resume hook),
 `prism/src/App.tsx`, `prism/src/components/Sidebar.tsx`, `CLAUDE.md`,
 `evals/run_evals.py`.
 
@@ -231,6 +252,9 @@ resume hook), `services/andromeda_service.py` (4 endpoints + review-resume hook)
 - **LLM plan quality** is the main unknown. Mitigation: the `plan_confidence`
   gate routes shaky plans to a human before any task runs, and every task still
   passes through the normal per-task confidence machinery.
-- **Synchronous long requests** — accepted for v1 (see API section).
-- **Review-queue schema change** — adding nullable `goal_id`/`task_id` columns is
-  backwards-compatible; existing rows get `NULL`.
+- **In-memory execution state** — a process restart mid-goal leaves it stuck in
+  `running`. Mitigation: `POST /goals/{id}/resume` re-drives from persisted task
+  state (every task's status/result is in `GoalStore`, not just memory).
+- **Review-queue schema migration** — the new nullable `goal_id` column must be
+  added with `ALTER TABLE` guarded by `PRAGMA table_info`, not left to
+  `CREATE TABLE IF NOT EXISTS`, so existing `data/*.db` files pick it up.
