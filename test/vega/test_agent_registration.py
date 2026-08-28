@@ -1,6 +1,7 @@
 from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.task_log import TaskLog
 from agents.vega.agent import VegaAgent
+from core.artifacts.store import ArtifactStore
 from core.contracts import RefineryFeedbackEvent, validate_feedback_event
 from core.pulsar.registry import PulsarRegistry
 
@@ -62,6 +63,7 @@ def test_vega_feedback_accepts_emitted_legacy_skill_ids(tmp_path):
 def test_andromeda_routes_requirements_to_test_cases_via_registry(monkeypatch, tmp_path):
     registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
     task_log = TaskLog(db_path=str(tmp_path / "andromeda_tasks.db"))
+    artifact_store = ArtifactStore(db_path=str(tmp_path / "artifacts.db"))
     vega = VegaAgent(registry)
 
     monkeypatch.setattr(
@@ -81,6 +83,7 @@ def test_andromeda_routes_requirements_to_test_cases_via_registry(monkeypatch, t
         registry,
         task_log,
         agents={"vega": vega},
+        artifact_store=artifact_store,
     )
 
     state = andromeda.route(

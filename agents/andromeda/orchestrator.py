@@ -20,6 +20,7 @@ from agents.andromeda.state import AndromedaState
 from agents.andromeda.task_log import TaskLog
 from agents.rigel.agent import RigelAgent
 from agents.vega.agent import VegaAgent
+from core.artifacts.store import ArtifactStore
 from core.contracts import TaskContract
 from core.pulsar.registry import PulsarRegistry
 from orion.core.weights_loader import RoutingWeightsLoader
@@ -55,9 +56,14 @@ def _after_load_check(state: AndromedaState) -> str:
 def _make_after_execute(completion_threshold: float, failure_threshold: float):
     def _after_execute(state: AndromedaState) -> str:
         confidence = state.get("confidence") or 0.0
+        # A caller-supplied TaskContract.confidence_threshold overrides the agent's
+        # global default completion threshold; the failure threshold stays global.
+        threshold = state.get("confidence_threshold")
+        if threshold is None:
+            threshold = completion_threshold
         if state.get("status") == "failed":
             return "escalate"
-        if confidence >= completion_threshold:
+        if confidence >= threshold:
             return "complete"
         if confidence >= failure_threshold:
             return "handle_failure"
@@ -149,10 +155,12 @@ class Andromeda:
         task_log: TaskLog,
         agents: Optional[dict[str, object]] = None,
         review_queue: Optional[ReviewQueue] = None,
+        artifact_store: Optional[ArtifactStore] = None,
     ):
         self.registry = registry
         self.task_log = task_log
         self.review_queue = review_queue or ReviewQueue()
+        self.artifact_store = artifact_store or ArtifactStore()
         self.routing_weights = RoutingWeightsLoader(str(ROUTING_WEIGHTS_PATH))
         self._workspace_config = load_workspace_config()
         self._routing_weights_stop = threading.Event()
@@ -319,6 +327,7 @@ class Andromeda:
             timeout_ms=task.deadline_ms or 30000,
             status="routing",
             issued_at=task.created_at.isoformat(),
+            confidence_threshold=task.confidence_threshold,
         )
 
         self.task_log.write(initial_state.model_copy(update={"status": "received"}))
@@ -335,6 +344,13 @@ class Andromeda:
         result["summary"] = skill_output.get("summary", "")
         result["execution_result"] = skill_output.get("execution_result")
         result["externally_calibrated"] = skill_output.get("externally_calibrated", False)
+        if result["artifacts"]:
+            self.artifact_store.record(
+                result["artifacts"],
+                workspace_root=task.workspace_root or "",
+                task_id=str(task.task_id),
+                skill=task.skill,
+            )
         if validated_state.status == "escalated":
             sla_deadline = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
             self.review_queue.enqueue(

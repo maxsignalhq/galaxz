@@ -3,6 +3,7 @@ import pytest
 from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.task_log import TaskLog
 from agents.rigel.agent import RigelAgent
+from core.artifacts.store import ArtifactStore
 from core.contracts import SkillDefinition, SkillManifest
 from core.pulsar.registry import PulsarRegistry
 
@@ -82,7 +83,8 @@ def test_andromeda_routes_known_rigel_skill_and_persists_task(
 ):
     registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
     task_log = TaskLog(db_path=str(tmp_path / "andromeda_tasks.db"))
-    andromeda = Andromeda(registry, task_log)
+    artifact_store = ArtifactStore(db_path=str(tmp_path / "artifacts.db"))
+    andromeda = Andromeda(registry, task_log, artifact_store=artifact_store)
     andromeda._agents["rigel"].llm = deterministic_rigel_llm
 
     state = andromeda.route(
@@ -104,6 +106,7 @@ def test_andromeda_routes_known_rigel_skill_and_persists_task(
 def test_andromeda_uses_seed_weight_when_multiple_agents_match(tmp_path):
     registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
     task_log = TaskLog(db_path=str(tmp_path / "andromeda_tasks.db"))
+    artifact_store = ArtifactStore(db_path=str(tmp_path / "artifacts.db"))
     skill = SkillDefinition(
         skill_id="rigel.skill.code_generation",
         description="Generate code",
@@ -141,6 +144,7 @@ def test_andromeda_uses_seed_weight_when_multiple_agents_match(tmp_path):
         registry,
         task_log,
         agents={"vega": FakeAgent("vega"), "rigel": FakeAgent("rigel")},
+        artifact_store=artifact_store,
     )
 
     state = andromeda.route(
@@ -157,7 +161,8 @@ def test_andromeda_uses_seed_weight_when_multiple_agents_match(tmp_path):
 def test_andromeda_escalates_when_no_agent_matches(tmp_path):
     registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
     task_log = TaskLog(db_path=str(tmp_path / "andromeda_tasks.db"))
-    andromeda = Andromeda(registry, task_log)
+    artifact_store = ArtifactStore(db_path=str(tmp_path / "artifacts.db"))
+    andromeda = Andromeda(registry, task_log, artifact_store=artifact_store)
 
     state = andromeda.route(
         task_type="unknown",
