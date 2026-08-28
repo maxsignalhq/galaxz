@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 from boot import boot
 from agents.andromeda.middleware.auth import ApiKeyMiddleware
 from agents.andromeda.orchestrator import Andromeda
+from agents.andromeda.planner import PlanValidationError
+from core.contracts import GoalContract
 from services.file_writer import FileWriter
 from core.aether.client import AetherClient, get_aether_client
 from core.artifacts.store import identity_key
@@ -111,6 +113,11 @@ class ArtifactRollbackRequest(BaseModel):
     path: str
     workspace_root: str = ""
     version: int
+
+
+class GoalRequest(BaseModel):
+    objective: str
+    confidence_threshold: float = 0.65
 
 
 _SHORT_SKILL_ALIASES = {
@@ -588,6 +595,96 @@ def rollback_artifact(req: ArtifactRollbackRequest):
     return {"content": row["content"], "version": req.version, "written": written}
 
 
+def _resume_goal_from_review(queue_task_id: str, goal_id: str, approved: bool) -> None:
+    gid = UUID(goal_id)
+    if queue_task_id.startswith("plan:"):
+        if approved:
+            _andromeda.goal_runner.run_async(gid)
+        else:
+            _andromeda.goal_store.set_goal_status(gid, "failed")
+        return
+    _andromeda.goal_runner.resolve_escalated_task(gid, UUID(queue_task_id), approved)
+
+
+@app.post("/goals", status_code=202)
+def create_goal(req: GoalRequest):
+    goal = GoalContract(
+        origin="api",
+        objective=req.objective,
+        confidence_threshold=req.confidence_threshold,
+    )
+    _andromeda.goal_store.create_goal(goal)
+    try:
+        plan = _andromeda.goal_planner.plan(goal)
+    except PlanValidationError as e:
+        _andromeda.goal_store.set_goal_status(goal.goal_id, "failed")
+        raise HTTPException(status_code=422, detail=f"planning failed: {e}")
+
+    gated = plan.plan_confidence < goal.confidence_threshold
+    _andromeda.goal_store.save_plan(
+        goal.goal_id, plan.projects, plan.tasks, plan.plan_confidence, gated=gated
+    )
+    if gated:
+        _andromeda.review_queue.enqueue(
+            task_id=f"plan:{goal.goal_id}",
+            task_type="goal.plan_review",
+            confidence=plan.plan_confidence,
+            payload={"objective": goal.objective},
+            skill_id="goal.plan_review",
+            goal_id=str(goal.goal_id),
+        )
+    else:
+        _andromeda.goal_runner.run_async(goal.goal_id)
+
+    tree = _andromeda.goal_store.goal_tree(goal.goal_id)
+    tree["plan_pending_review"] = gated
+    return tree
+
+
+@app.get("/goals")
+def list_goals():
+    return [
+        {
+            "goal_id": str(g.goal_id),
+            "origin": g.origin,
+            "objective": g.objective,
+            "confidence_threshold": g.confidence_threshold,
+            "status": g.status,
+            "plan_confidence": g.plan_confidence,
+            "created_at": g.created_at.isoformat(),
+        }
+        for g in _andromeda.goal_store.list_goals()
+    ]
+
+
+@app.get("/goals/{goal_id}")
+def get_goal(goal_id: str):
+    try:
+        gid = UUID(goal_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="goal not found")
+    if _andromeda.goal_store.get_goal(gid) is None:
+        raise HTTPException(status_code=404, detail="goal not found")
+    tree = _andromeda.goal_store.goal_tree(gid)
+    tree["rollup"] = _andromeda.goal_store.rollup(gid)
+    return tree
+
+
+@app.post("/goals/{goal_id}/resume", status_code=202)
+def resume_goal(goal_id: str):
+    try:
+        gid = UUID(goal_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="goal not found")
+    goal = _andromeda.goal_store.get_goal(gid)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="goal not found")
+    if goal.status not in ("ready", "paused"):
+        raise HTTPException(status_code=409, detail=f"goal is {goal.status}, cannot resume")
+    _andromeda.goal_runner.run_async(gid)
+    return _andromeda.goal_store.goal_tree(gid)
+
+
 @app.get("/status")
 def get_status():
     registry_health = _andromeda.registry.health_check()
@@ -690,6 +787,9 @@ def approve_task(task_id: str, req: ResolveRequest = ResolveRequest()):
 
     _andromeda.task_log.update_status(task_id, item.get("task_type", ""), "approved")
 
+    if item.get("goal_id"):
+        _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
+
     event = FeedbackEvent(
         task_id=task_id,
         task_category=item.get("task_type") or "unknown",
@@ -745,6 +845,9 @@ def reject_task(task_id: str, req: ResolveRequest = ResolveRequest()):
         raise HTTPException(status_code=409, detail="task already reviewed")
 
     _andromeda.task_log.update_status(task_id, item.get("task_type", ""), "rejected")
+
+    if item.get("goal_id"):
+        _resume_goal_from_review(item["task_id"], item["goal_id"], approved=False)
 
     event = FeedbackEvent(
         task_id=task_id,
