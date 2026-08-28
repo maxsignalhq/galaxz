@@ -619,6 +619,9 @@ def create_goal(req: GoalRequest):
     except PlanValidationError as e:
         _andromeda.goal_store.set_goal_status(goal.goal_id, "failed")
         raise HTTPException(status_code=422, detail=f"planning failed: {e}")
+    except Exception as e:  # LLM/transport errors — don't leave the goal stuck in "planning"
+        _andromeda.goal_store.set_goal_status(goal.goal_id, "failed")
+        raise HTTPException(status_code=502, detail=f"planner error: {e}")
 
     gated = plan.plan_confidence < goal.confidence_threshold
     _andromeda.goal_store.save_plan(
@@ -817,6 +820,9 @@ def accept_task(task_id: str, req: ResolveRequest = ResolveRequest()):
         raise HTTPException(status_code=409, detail="task already reviewed")
 
     _andromeda.task_log.update_status(task_id, item.get("task_type", ""), "accepted")
+
+    if item.get("goal_id"):
+        _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
 
     event = FeedbackEvent(
         task_id=task_id,

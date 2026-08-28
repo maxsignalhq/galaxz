@@ -1,10 +1,10 @@
 # Eval Execution Report
 
-- Started: `2026-05-25T16:06:42.634518+00:00`
-- Completed: `2026-05-25T16:06:42.749059+00:00`
-- Duration: `0.115s`
+- Started: `2026-08-28T22:52:40.022472+00:00`
+- Completed: `2026-08-28T22:52:40.141350+00:00`
+- Duration: `0.119s`
 - Scenarios: `4`
-- Passed suites: `8`
+- Passed suites: `9`
 - Failed suites: `0`
 
 ## Suites
@@ -21,7 +21,7 @@
 - Check: Health Vega flow
 - Check: Hospitality Vega flow
 - Check: Retail Vega flow
-- Artifacts: `{"finance_ach_payroll": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "0114d54d-3f22-4f93-a447-5b57a4cbdaeb"}, "health_fhir_intake": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "4b9f812d-b992-4ae4-b637-104261111116"}, "hospitality_booking": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "7b558f21-6ebc-471b-a05b-2e21b195394a"}, "retail_gtin_catalog": {"bugs": 0, "feedback_stream": "galaxz.feedback.vega", "run_id": "68ab02ce-82f6-412f-abfa-3146fbbdbc01"}}`
+- Artifacts: `{"finance_ach_payroll": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "d9a9024e-a59b-47e1-a99b-f5a272a8b5e9"}, "health_fhir_intake": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "b55ad56a-8777-4261-8372-19a9dbad3406"}, "hospitality_booking": {"bugs": 1, "feedback_stream": "galaxz.feedback.vega", "run_id": "a9769581-f71d-4033-a98d-0001b21d5b77"}, "retail_gtin_catalog": {"bugs": 0, "feedback_stream": "galaxz.feedback.vega", "run_id": "5482b79f-da95-418b-88a0-39ab7735e1ef"}}`
 
 ### rigel_skills
 - Status: `passed`
@@ -39,7 +39,14 @@
 - Check: Rigel routing
 - Check: No-match routing
 - Check: Task log persistence
-- Artifacts: `{"rigel_task_id": "284d8910-9a78-45ef-814e-3a7349aaa3c3", "vega_task_id": "17d5d4cf-8357-4728-a771-c1b4aea75382"}`
+- Artifacts: `{"rigel_task_id": "13660af7-9561-4806-9eb2-408d954a9c23", "vega_task_id": "5c1aea91-e45a-4a11-892c-d18d25f8c370"}`
+
+### goal_execution
+- Status: `passed`
+- Check: Goal DAG completion
+- Check: Goal rollup completed count
+- Check: Goal rollup total count
+- Artifacts: `{"goal_id": "f238e723-d148-40bb-bf38-7b55a1d0e69a", "status": "complete"}`
 
 ### cli_surface
 - Status: `passed`
@@ -60,7 +67,7 @@
 - Check: Direct Orion ingest for accepted and rejected feedback
 - Check: Dataset curation cycle
 - Check: Heuristic cycle with routing, drift, and fine-tune signals
-- Artifacts: `{"heuristic_streams": ["aether:orion.drift_alert", "aether:orion.fine_tune_ready", "aether:routing.heuristic_update"], "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-t_gvlwe8/datasets"}`
+- Artifacts: `{"heuristic_streams": ["aether:orion.drift_alert", "aether:orion.fine_tune_ready", "aether:routing.heuristic_update"], "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-5bp1wz72/datasets"}`
 
 ### feedback_handshake
 - Status: `passed`

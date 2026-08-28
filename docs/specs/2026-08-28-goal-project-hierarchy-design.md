@@ -252,9 +252,11 @@ review-resume hook),
 - **LLM plan quality** is the main unknown. Mitigation: the `plan_confidence`
   gate routes shaky plans to a human before any task runs, and every task still
   passes through the normal per-task confidence machinery.
-- **In-memory execution state** — a process restart mid-goal leaves it stuck in
-  `running`. Mitigation: `POST /goals/{id}/resume` re-drives from persisted task
-  state (every task's status/result is in `GoalStore`, not just memory).
+- **In-memory execution state** — a process restart mid-goal leaves the goal
+  stuck in `running` (and a planner transport error can leave one in `planning`).
+  `try_claim` only promotes `ready|paused`, so `/resume` cannot recover those
+  states on its own; an operator must first `set_goal_status(..., "paused")`.
+  A heartbeat/lease that auto-reclaims stale `running` goals is future work.
 - **Review-queue schema migration** — the new nullable `goal_id` column must be
   added with `ALTER TABLE` guarded by `PRAGMA table_info`, not left to
   `CREATE TABLE IF NOT EXISTS`, so existing `data/*.db` files pick it up.

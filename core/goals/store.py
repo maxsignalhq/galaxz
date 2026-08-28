@@ -51,7 +51,7 @@ _UPDATABLE_TASK_FIELDS = {"status", "confidence", "result", "error"}
 
 class GoalStore:
     def __init__(self, db_path: str = "data/goals.db"):
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         dirname = os.path.dirname(db_path)
         if dirname:
             os.makedirs(dirname, exist_ok=True)
@@ -76,8 +76,9 @@ class GoalStore:
             self._conn.commit()
 
     def get_goal(self, goal_id: UUID) -> GoalContract | None:
-        cur = self._conn.execute("SELECT * FROM goals WHERE goal_id = ?", (str(goal_id),))
-        row = cur.fetchone()
+        with self._lock:
+            cur = self._conn.execute("SELECT * FROM goals WHERE goal_id = ?", (str(goal_id),))
+            row = cur.fetchone()
         if row is None:
             return None
         return GoalContract(
@@ -91,10 +92,12 @@ class GoalStore:
         )
 
     def list_goals(self) -> list[GoalContract]:
-        cur = self._conn.execute(
-            "SELECT goal_id FROM goals ORDER BY created_at DESC, rowid DESC"
-        )
-        return [self.get_goal(UUID(r["goal_id"])) for r in cur.fetchall()]
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT goal_id FROM goals ORDER BY created_at DESC, rowid DESC"
+            )
+            ids = [r["goal_id"] for r in cur.fetchall()]
+            return [self.get_goal(UUID(i)) for i in ids]
 
     def set_goal_status(self, goal_id: UUID, status: str) -> None:
         with self._lock:
@@ -164,10 +167,12 @@ class GoalStore:
         )
 
     def get_tasks(self, goal_id: UUID) -> list[PlannedTask]:
-        cur = self._conn.execute(
-            "SELECT * FROM planned_tasks WHERE goal_id = ? ORDER BY ordinal", (str(goal_id),)
-        )
-        return [self._row_to_task(r) for r in cur.fetchall()]
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT * FROM planned_tasks WHERE goal_id = ? ORDER BY ordinal", (str(goal_id),)
+            )
+            rows = cur.fetchall()
+        return [self._row_to_task(r) for r in rows]
 
     def update_task(self, task_id: UUID, **fields) -> None:
         bad = set(fields) - _UPDATABLE_TASK_FIELDS
@@ -209,9 +214,11 @@ class GoalStore:
                     "error": t.error,
                 }
             )
-        pcur = self._conn.execute(
-            "SELECT * FROM projects WHERE goal_id = ? ORDER BY ordinal", (str(goal_id),)
-        )
+        with self._lock:
+            pcur = self._conn.execute(
+                "SELECT * FROM projects WHERE goal_id = ? ORDER BY ordinal", (str(goal_id),)
+            )
+            project_rows = pcur.fetchall()
         projects = [
             {
                 "project_id": pr["project_id"],
@@ -220,7 +227,7 @@ class GoalStore:
                 "description": pr["description"],
                 "tasks": tasks_by_project.get(pr["project_id"], []),
             }
-            for pr in pcur.fetchall()
+            for pr in project_rows
         ]
         return {
             "goal": {

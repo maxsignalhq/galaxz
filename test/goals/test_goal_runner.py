@@ -97,7 +97,8 @@ def test_resume_after_approve_continues(store):
     runner = GoalRunner(andro, store)
     runner.run(g.goal_id)
     assert store.get_goal(g.goal_id).status == "paused"
-    runner.resolve_escalated_task(g.goal_id, t1.task_id, approved=True)
+    thread = runner.resolve_escalated_task(g.goal_id, t1.task_id, approved=True)
+    thread.join(timeout=5)
     assert store.get_goal(g.goal_id).status == "complete"
     assert andro.calls == ["s.a", "s.b"]
 

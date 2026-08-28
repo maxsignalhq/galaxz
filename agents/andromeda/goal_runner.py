@@ -14,10 +14,12 @@ class GoalRunner:
         self._andromeda = andromeda
         self._store = store
 
-    def run_async(self, goal_id: UUID) -> None:
-        threading.Thread(
+    def run_async(self, goal_id: UUID) -> threading.Thread:
+        thread = threading.Thread(
             target=self.run, args=(goal_id,), name=f"goal-{goal_id}", daemon=True
-        ).start()
+        )
+        thread.start()
+        return thread
 
     def run(self, goal_id: UUID) -> None:
         if not self._store.try_claim(goal_id):
@@ -94,10 +96,15 @@ class GoalRunner:
             self._store.set_goal_status(goal_id, "paused")
             return
 
-    def resolve_escalated_task(self, goal_id: UUID, task_id: UUID, approved: bool) -> None:
+    def resolve_escalated_task(self, goal_id: UUID, task_id: UUID, approved: bool):
+        """Update the reviewed task, then continue the DAG off the request thread.
+
+        Returns the runner thread (approved path) or None (rejected path) so
+        callers/tests can join; the HTTP handler ignores it.
+        """
         if approved:
             self._store.update_task(task_id, status="complete")
-            self.run(goal_id)
-        else:
-            self._store.update_task(task_id, status="failed", error="rejected by reviewer")
-            self._store.set_goal_status(goal_id, "failed")
+            return self.run_async(goal_id)
+        self._store.update_task(task_id, status="failed", error="rejected by reviewer")
+        self._store.set_goal_status(goal_id, "failed")
+        return None
