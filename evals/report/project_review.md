@@ -30,16 +30,21 @@ The three findings in the prior version of this report are all resolved:
   (`agents/rigel/skills/write_tests.py::write_tests`) so pytest no longer tries to collect it
   as a test. Full suite: `130 passed, 5 skipped`.
 
+## Shipped 2026-08-28 (this pass)
+
+- **Goal/project hierarchy** — `GoalContract` / `ProjectNode` / `PlannedTask`, `GoalStore`
+  (SQLite), `GoalPlanner` (one LLM call, skill validation, DAG cycle detection),
+  `GoalRunner` (dependency-ordered execution on a daemon thread, escalate-and-pause,
+  resume via the review queue), `/goals` + `/goals/{id}` + `/goals/{id}/resume` endpoints,
+  and a Prism **Goals** page. Spec `docs/specs/2026-08-28-goal-project-hierarchy-design.md`,
+  plan `docs/plans/2026-08-28-goal-project-hierarchy.md`.
+- **Prism containerization** — `prism/Dockerfile` + `nginx.conf.template`, env-configurable
+  proxy target, `prism` service in `docker-compose.yml`. (Docker image build unverified —
+  no daemon in the dev environment.)
+- **Artifact-store operator UI** — `prism/src/pages/Artifacts.tsx` over `/artifacts/*`.
+
 ## Remaining Backlog
 
-Tracked in `CLAUDE.md`'s priority list and `RELEASE.md` "What's Next":
-
-- **Goal/project hierarchy** — LLM-planned `Goal` → `Project` → `Task` DAG with dependency-
-  ordered execution, review-queue escalation on failure, and status rollup. Design spec:
-  `docs/superpowers/specs/2026-08-28-goal-project-hierarchy-design.md`.
-- **Prism containerization** — Dockerfile + `prism` service in `docker-compose.yml`,
-  env-configurable API proxy target.
-- **Artifact-store operator UI** — a Prism page over the `/artifacts/*` endpoints.
 - **v2-scope, deferred** — multi-tenancy, user accounts/roles, OAuth/SSO, per-agent auth,
   audit logging, and executing (not just curating) fine-tune training runs.
 
