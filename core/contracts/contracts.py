@@ -143,3 +143,53 @@ class TrainingExample(BaseModel):
     feedback_event_id: UUID
     created_at: datetime
     exported_at: Optional[datetime] = None
+
+
+GoalStatus = Literal["planning", "ready", "running", "paused", "complete", "failed"]
+PlannedTaskStatus = Literal["pending", "running", "complete", "failed", "escalated"]
+
+
+class GoalContract(BaseModel):
+    goal_id: UUID = Field(default_factory=uuid4)
+    origin: str
+    objective: str
+    confidence_threshold: float = Field(ge=0.0, le=1.0)
+    status: GoalStatus = "planning"
+    plan_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("origin", "objective")
+    @classmethod
+    def _non_empty(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+
+class ProjectNode(BaseModel):
+    project_id: UUID = Field(default_factory=uuid4)
+    goal_id: UUID
+    title: str
+    description: str = ""
+
+    @field_validator("title")
+    @classmethod
+    def _non_empty_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+
+class PlannedTask(BaseModel):
+    task_id: UUID = Field(default_factory=uuid4)
+    project_id: UUID
+    goal_id: UUID
+    skill: str
+    payload: dict
+    depends_on: list[UUID] = Field(default_factory=list)
+    status: PlannedTaskStatus = "pending"
+    confidence: float | None = None
+    result: dict | None = None
+    error: str | None = None
