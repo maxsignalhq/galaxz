@@ -7,6 +7,7 @@ import { useTheme } from '../context/ThemeContext';
 const NAV_ROUTES: Partial<Record<string, string>> = {
   dashboard:    '/dashboard',
   'task-queue': '/task-queue',
+  artifacts:    '/artifacts',
   'dev-console':'/dev-console',
   'task-ui':    '/task-ui',
   'review-queue':'/review-queue',
@@ -20,6 +21,7 @@ const NAV_ROUTES: Partial<Record<string, string>> = {
 type NavId =
   | 'dashboard'
   | 'task-queue'
+  | 'artifacts'
   | 'dev-console'
   | 'task-ui'
   | 'review-queue'
@@ -122,6 +124,7 @@ function buildNavSections(pendingReviewCount: number | null): NavSection[] {
     items: [
       { id: 'dashboard',    label: 'Dashboard',    icon: <IconGrid /> },
       { id: 'task-queue',   label: 'Task Queue',   icon: <IconList /> },
+      { id: 'artifacts',    label: 'Artifacts',    icon: <IconFile /> },
     ],
   },
   {

@@ -1,4 +1,4 @@
-def test_writing(payload: dict, llm_client) -> dict:
+def write_tests(payload: dict, llm_client) -> dict:
     code = payload["code"]
     test_framework = payload.get("test_framework", "pytest")
     focus_areas = payload.get("focus_areas", [])
