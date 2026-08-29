@@ -41,6 +41,11 @@ sub-threshold result, and reports rolled-up status.
 - Goal-level Aether events / Orion feedback for the plan itself (task-level
   feedback already flows through `Andromeda.route()` unchanged).
 - Cross-goal dependencies.
+- **Payload templating from upstream results.** `depends_on` controls execution
+  order only; a downstream task's `payload` is whatever the planner wrote at plan
+  time. It cannot reference `deps[0].result`. For a code→test chain the planner
+  puts a placeholder in the test task's `code` field; the human resolves it at the
+  escalation. Result-substitution (`{{deps[0].result.code}}`) is a clear follow-up.
 
 ## Data Model
 
