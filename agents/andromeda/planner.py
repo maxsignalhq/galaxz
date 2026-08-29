@@ -9,8 +9,10 @@ from core.llm.provider import call_llm, load_provider_config
 _SYSTEM_PROMPT = (
     "You are Andromeda's goal planner. Decompose the user's objective into a small "
     "set of projects, each containing concrete tasks. Every task must target exactly "
-    "one of the registered skills listed below, with a payload matching that skill's "
-    "input. Express ordering with `depends_on`: a list of integer indices into the "
+    "one of the registered skills listed below. The task payload MUST use exactly the "
+    "keys named in that skill's `payload=` schema (all `required` keys, `optional` "
+    "keys only when useful) - do not invent or rename keys. Express ordering with "
+    "`depends_on`: a list of integer indices into the "
     "flattened task list (projects in order, tasks in order within each project). "
     "Keep the plan minimal - no speculative work. Respond with ONLY a JSON object:\n"
     '{"plan_confidence": <0..1>, "projects": [{"title": str, "description": str, '
@@ -67,7 +69,9 @@ class GoalPlanner:
     def plan(self, goal: GoalContract) -> PlanResult:
         known = self._known_skills()
         skill_hint = "\n".join(
-            f"- {s.skill_id}: {s.description}" for s in self._registry.get_all_skills()
+            f"- {s.skill_id}: {s.description}"
+            + (f"  payload={json.dumps(s.input_schema)}" if s.input_schema else "")
+            for s in self._registry.get_all_skills()
         )
         user_msg = f"Objective:\n{goal.objective}\n\nRegistered skills:\n{skill_hint}"
         config = self._config_loader()

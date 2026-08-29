@@ -141,12 +141,18 @@ class RigelAgent:
     HEALTH_ENDPOINT = "http://rigel:8002/health"
 
     SKILLS = [
-        {"skill_id": "rigel.skill.code_generation", "description": "Generate code from spec or context", "avg_confidence": 0.86, "avg_latency_ms": 900},
-        {"skill_id": "rigel.skill.pr_review", "description": "Review a pull request diff for issues", "avg_confidence": 0.84, "avg_latency_ms": 700},
-        {"skill_id": "rigel.skill.test_writing", "description": "Generate tests for existing code", "avg_confidence": 0.83, "avg_latency_ms": 950},
-        {"skill_id": "rigel.skill.refactor", "description": "Restructure code without changing behavior", "avg_confidence": 0.81, "avg_latency_ms": 1000},
-        {"skill_id": "rigel.skill.scaffold", "description": "Generate project scaffolding and boilerplate", "avg_confidence": 0.79, "avg_latency_ms": 1100},
-        {"skill_id": "rigel.skill.debug_triage", "description": "Analyze errors and hypothesize root cause", "avg_confidence": 0.82, "avg_latency_ms": 650},
+        {"skill_id": "rigel.skill.code_generation", "description": "Generate code from spec or context", "avg_confidence": 0.86, "avg_latency_ms": 900,
+         "input_schema": {"required": ["spec"], "optional": ["language", "context_files"]}},
+        {"skill_id": "rigel.skill.pr_review", "description": "Review a pull request diff for issues", "avg_confidence": 0.84, "avg_latency_ms": 700,
+         "input_schema": {"required": ["diff"], "optional": ["codebase_context"]}},
+        {"skill_id": "rigel.skill.test_writing", "description": "Generate tests for existing code", "avg_confidence": 0.83, "avg_latency_ms": 950,
+         "input_schema": {"required": ["code"], "optional": ["test_framework", "focus_areas"]}},
+        {"skill_id": "rigel.skill.refactor", "description": "Restructure code without changing behavior", "avg_confidence": 0.81, "avg_latency_ms": 1000,
+         "input_schema": {"required": ["code", "refactor_intent"], "optional": ["language"]}},
+        {"skill_id": "rigel.skill.scaffold", "description": "Generate project scaffolding and boilerplate", "avg_confidence": 0.79, "avg_latency_ms": 1100,
+         "input_schema": {"required": ["project_type", "stack"], "optional": ["features"]}},
+        {"skill_id": "rigel.skill.debug_triage", "description": "Analyze errors and hypothesize root cause", "avg_confidence": 0.82, "avg_latency_ms": 650,
+         "input_schema": {"required": ["error_trace"], "optional": ["context", "language"]}},
     ]
 
     def __init__(
@@ -190,7 +196,7 @@ class RigelAgent:
                 SkillDefinition(
                     skill_id=skill_def["skill_id"],
                     description=skill_def["description"],
-                    input_schema={},
+                    input_schema=skill_def.get("input_schema", {}),
                     output_schema={},
                     avg_confidence=skill_def["avg_confidence"],
                     avg_latency_ms=skill_def["avg_latency_ms"],
