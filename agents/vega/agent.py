@@ -91,8 +91,13 @@ class VegaAgent:
         },
     }
 
-    def __init__(self, registry: PulsarRegistry):
+    def __init__(
+        self,
+        registry: PulsarRegistry,
+        config_path: str = "config/providers.yaml",
+    ):
         self.registry = registry
+        self.config_path = config_path
         self._heartbeat_stop = threading.Event()
         self._heartbeat_thread: Optional[threading.Thread] = None
         self.registry.register(self._build_manifest())
@@ -169,7 +174,7 @@ class VegaAgent:
             try:
                 result = run_vega_pipeline(
                     raw_requirements=raw_requirements,
-                    config_path=context.get("config_path", "config/providers.yaml"),
+                    config_path=context.get("config_path", self.config_path),
                     source_type=payload.get("source_type", "plain"),
                 )
             except Exception as exc:
@@ -204,7 +209,7 @@ class VegaAgent:
             result = run_vega_pipeline(
                 raw_requirements=self._require_raw_requirements(payload),
                 test_results=payload.get("test_results"),
-                config_path=context.get("config_path", "config/providers.yaml"),
+                config_path=context.get("config_path", self.config_path),
                 source_type=payload.get("source_type", "plain"),
             )
             return {

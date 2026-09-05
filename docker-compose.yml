@@ -85,6 +85,10 @@ services:
       RIGEL_CONFIDENCE_COMPLETION_THRESHOLD: "0.65"
       RIGEL_CONFIDENCE_FAILURE_THRESHOLD: "0.40"
       RIGEL_CONFIDENCE_PARSE_ERROR_FALLBACK: "0.75"
+      JOB_DB_PATH: /var/lib/galaxz/jobs.db
+      GOAL_DB_PATH: /var/lib/galaxz/goals.db
+      REVIEW_DB_PATH: /var/lib/galaxz/reviews.db
+      ARTIFACT_DB_PATH: /var/lib/galaxz/artifacts.db
     ports:
       - "8001:8001"
     volumes:
@@ -92,12 +96,39 @@ services:
       - ./orion/config:/app/orion/config
       - ./orion/data:/app/orion/data
       - ./agents:/app/agents
+      - job-data:/var/lib/galaxz
     command: python -u services/andromeda_service.py
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+  worker:
+    build: .
+    image: galaxz:latest
+    depends_on:
+      - aether
+      - pulsar
+      - galaxz
+    env_file:
+      - .env
+    environment:
+      JOB_DB_PATH: /var/lib/galaxz/jobs.db
+      GOAL_DB_PATH: /var/lib/galaxz/goals.db
+      REVIEW_DB_PATH: /var/lib/galaxz/reviews.db
+      ARTIFACT_DB_PATH: /var/lib/galaxz/artifacts.db
+      WORKER_CONCURRENCY: "1"
+      WORKER_LEASE_SECONDS: "30"
+      WORKER_HEARTBEAT_SECONDS: "10"
+    volumes:
+      - ./config:/app/config
+      - ./orion/config:/app/orion/config
+      - ./orion/data:/app/orion/data
+      - ./agents:/app/agents
+      - job-data:/var/lib/galaxz
+    command: python -u services/worker_service.py
+    restart: unless-stopped
 
   prism:
     build: ./prism
@@ -111,3 +142,6 @@ services:
     ports:
       - "5173:80"
     restart: unless-stopped
+
+volumes:
+  job-data:

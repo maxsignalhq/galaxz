@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -163,8 +164,12 @@ class Andromeda:
     ):
         self.registry = registry
         self.task_log = task_log
-        self.review_queue = review_queue or ReviewQueue()
-        self.artifact_store = artifact_store or ArtifactStore()
+        self.review_queue = review_queue or ReviewQueue(
+            db_path=os.getenv("REVIEW_DB_PATH", "data/andromeda_tasks.db")
+        )
+        self.artifact_store = artifact_store or ArtifactStore(
+            db_path=os.getenv("ARTIFACT_DB_PATH", "data/artifacts.db")
+        )
         self.goal_store = goal_store or GoalStore()
         self.goal_planner = GoalPlanner(registry)
         self.goal_runner = GoalRunner(self, self.goal_store)
@@ -351,17 +356,28 @@ class Andromeda:
         result["summary"] = skill_output.get("summary", "")
         result["execution_result"] = skill_output.get("execution_result")
         result["externally_calibrated"] = skill_output.get("externally_calibrated", False)
+        # Durable workers publish evidence from the committed completion outbox.
+        # Routing an uncommitted attempt must not expose artifacts or reviews.
+        if task.execution_attempt_id is not None:
+            return result
         if result["artifacts"]:
             self.artifact_store.record(
                 result["artifacts"],
                 workspace_root=task.workspace_root or "",
                 task_id=str(task.task_id),
                 skill=task.skill,
+                attempt_id=str(task.execution_attempt_id) if task.execution_attempt_id else None,
             )
         if validated_state.status == "escalated":
             sla_deadline = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+            goal_id = task.origin.removeprefix("goal:") if task.origin.startswith("goal:") else None
+            queue_task_id = (
+                str(task.execution_attempt_id)
+                if goal_id and task.execution_attempt_id
+                else validated_state.task_id
+            )
             self.review_queue.enqueue(
-                task_id=validated_state.task_id,
+                task_id=queue_task_id,
                 task_type=validated_state.task_type or "",
                 confidence=validated_state.confidence or 0.0,
                 payload=validated_state.payload or {},
@@ -369,6 +385,9 @@ class Andromeda:
                 agent_id=validated_state.assigned_agent or "",
                 agent_output=validated_state.result if isinstance(validated_state.result, dict) else {},
                 sla_deadline=sla_deadline,
+                goal_id=goal_id,
+                planned_task_id=str(task.task_id) if goal_id else None,
+                attempt_id=str(task.execution_attempt_id) if task.execution_attempt_id else None,
             )
             result["review_pending"] = True
         return result

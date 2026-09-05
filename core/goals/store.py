@@ -4,6 +4,8 @@ import json
 import os
 import sqlite3
 import threading
+from datetime import datetime
+from datetime import timezone
 from uuid import UUID
 
 from core.contracts import GoalContract, PlannedTask, ProjectNode
@@ -46,20 +48,60 @@ CREATE TABLE IF NOT EXISTS planned_tasks (
 )
 """
 
+_CREATE_EVENTS = """
+CREATE TABLE IF NOT EXISTS goal_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    goal_id TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    reason TEXT,
+    affected_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+)
+"""
+
+_CREATE_GOAL_REPOSITORIES = """
+CREATE TABLE IF NOT EXISTS goal_repositories (
+    goal_id TEXT PRIMARY KEY, repository_id TEXT NOT NULL, base_revision TEXT NOT NULL,
+    base_commit_sha TEXT NOT NULL, recorded_at TEXT NOT NULL
+)
+"""
+
 _UPDATABLE_TASK_FIELDS = {"status", "confidence", "result", "error"}
 
 
 class GoalStore:
-    def __init__(self, db_path: str = "data/goals.db"):
+    def __init__(self, db_path: str | None = None):
+        db_path = db_path or os.getenv("GOAL_DB_PATH", "data/goals.db")
+        self.db_path = db_path
         self._lock = threading.RLock()
         dirname = os.path.dirname(db_path)
         if dirname:
             os.makedirs(dirname, exist_ok=True)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        for ddl in (_CREATE_GOALS, _CREATE_PROJECTS, _CREATE_TASKS):
+        for ddl in (_CREATE_GOALS, _CREATE_PROJECTS, _CREATE_TASKS, _CREATE_EVENTS, _CREATE_GOAL_REPOSITORIES):
             self._conn.execute(ddl)
+        columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(planned_tasks)")
+        }
+        if "job_id" not in columns:
+            self._conn.execute("ALTER TABLE planned_tasks ADD COLUMN job_id TEXT")
+        if "resolved_payload_json" not in columns:
+            self._conn.execute(
+                "ALTER TABLE planned_tasks ADD COLUMN resolved_payload_json TEXT"
+            )
         self._conn.commit()
+
+    def bind_repository(self, goal_id: UUID, repository_id: str, base_revision: str, base_commit_sha: str) -> None:
+        with self._lock:
+            self._conn.execute("INSERT OR REPLACE INTO goal_repositories VALUES (?, ?, ?, ?, ?)", (str(goal_id), repository_id, base_revision, base_commit_sha, datetime.now(timezone.utc).isoformat()))
+            self._conn.commit()
+
+    def repository_binding(self, goal_id: UUID) -> dict | None:
+        with self._lock:
+            row = self._conn.execute("SELECT repository_id, base_revision, base_commit_sha, recorded_at FROM goal_repositories WHERE goal_id = ?", (str(goal_id),)).fetchone()
+        return dict(row) if row else None
 
     # ---- goals -----------------------------------------------------------
     def create_goal(self, goal: GoalContract) -> None:
@@ -98,6 +140,13 @@ class GoalStore:
             )
             ids = [r["goal_id"] for r in cur.fetchall()]
             return [self.get_goal(UUID(i)) for i in ids]
+
+    def list_active_goals(self) -> list[GoalContract]:
+        return [
+            goal
+            for goal in self.list_goals()
+            if goal.status in ("ready", "running", "paused")
+        ]
 
     def set_goal_status(self, goal_id: UUID, status: str) -> None:
         with self._lock:
@@ -175,14 +224,18 @@ class GoalStore:
         return [self._row_to_task(r) for r in rows]
 
     def update_task(self, task_id: UUID, **fields) -> None:
-        bad = set(fields) - _UPDATABLE_TASK_FIELDS
+        allowed = _UPDATABLE_TASK_FIELDS | {"job_id", "resolved_payload"}
+        bad = set(fields) - allowed
         if bad:
             raise ValueError(f"cannot update task fields: {bad}")
-        col_map = {"result": "result_json"}
+        col_map = {
+            "result": "result_json",
+            "resolved_payload": "resolved_payload_json",
+        }
         sets, params = [], []
         for key, value in fields.items():
             sets.append(f"{col_map.get(key, key)} = ?")
-            if key == "result":
+            if key in ("result", "resolved_payload"):
                 params.append(json.dumps(value) if value is not None else None)
             else:
                 params.append(value)
@@ -192,6 +245,62 @@ class GoalStore:
                 f"UPDATE planned_tasks SET {', '.join(sets)} WHERE task_id = ?", params
             )
             self._conn.commit()
+
+    def task_execution(self, task_id: UUID) -> dict:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT job_id, resolved_payload_json FROM planned_tasks WHERE task_id = ?",
+                (str(task_id),),
+            ).fetchone()
+        if row is None:
+            raise KeyError(str(task_id))
+        return {
+            "job_id": row["job_id"],
+            "resolved_payload": (
+                json.loads(row["resolved_payload_json"])
+                if row["resolved_payload_json"]
+                else None
+            ),
+        }
+
+    def record_event(
+        self,
+        goal_id: UUID,
+        *,
+        actor: str,
+        action: str,
+        reason: str | None = None,
+        affected: list[str] | None = None,
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO goal_events(goal_id, actor, action, reason, affected_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    str(goal_id), actor, action, reason,
+                    json.dumps(affected or []),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            self._conn.commit()
+
+    def events(self, goal_id: UUID) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT actor, action, reason, affected_json, created_at FROM goal_events "
+                "WHERE goal_id = ? ORDER BY event_id",
+                (str(goal_id),),
+            ).fetchall()
+        return [
+            {
+                "actor": row["actor"],
+                "action": row["action"],
+                "reason": row["reason"],
+                "affected": json.loads(row["affected_json"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     # ---- read models ----------------------------------------------
     def goal_tree(self, goal_id: UUID) -> dict:
@@ -212,6 +321,7 @@ class GoalStore:
                     "confidence": t.confidence,
                     "result": t.result,
                     "error": t.error,
+                    **self.task_execution(t.task_id),
                 }
             )
         with self._lock:
@@ -251,4 +361,8 @@ class GoalStore:
             "completed": sum(1 for t in tasks if t.status == "complete"),
             "total": len(tasks),
             "min_confidence": min(confidences) if confidences else None,
+            "blocked": sum(1 for t in tasks if t.status == "blocked"),
+            "failed": sum(1 for t in tasks if t.status == "failed"),
+            "escalated": sum(1 for t in tasks if t.status == "escalated"),
+            "cancelled": sum(1 for t in tasks if t.status == "cancelled"),
         }

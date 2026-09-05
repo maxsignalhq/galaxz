@@ -12,6 +12,13 @@ type RecentTask = {
   issued_at: string | null;
 };
 
+type DurableJob = {
+  job_id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  priority: number;
+  created_at: string;
+};
+
 function confColor(value: number) {
   if (value >= 0.80) return '#00d4a0';
   if (value >= 0.60) return '#f5c040';
@@ -53,6 +60,7 @@ function EmptyMessage({ children }: { children: React.ReactNode }) {
 
 export function TaskQueue() {
   const [tasks, setTasks] = useState<RecentTask[]>([]);
+  const [jobs, setJobs] = useState<DurableJob[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,11 +68,17 @@ export function TaskQueue() {
 
     async function loadTasks() {
       try {
-        const response = await fetch('/api/tasks/recent?limit=50');
+        const [response, jobsResponse] = await Promise.all([
+          fetch('/api/tasks/recent?limit=50'),
+          fetch('/api/jobs?limit=50'),
+        ]);
         if (!response.ok) throw new Error(`tasks HTTP ${response.status}`);
+        if (!jobsResponse.ok) throw new Error(`jobs HTTP ${jobsResponse.status}`);
         const nextTasks = (await response.json()) as RecentTask[];
+        const nextJobs = (await jobsResponse.json()) as DurableJob[];
         if (!cancelled) {
           setTasks(nextTasks);
+          setJobs(nextJobs);
           setLoadError(null);
         }
       } catch (err) {
@@ -80,6 +94,16 @@ export function TaskQueue() {
     };
   }, []);
 
+  async function cancelJob(jobId: string) {
+    const response = await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+    if (!response.ok) {
+      setLoadError(`cancel HTTP ${response.status}`);
+      return;
+    }
+    const updated = (await response.json()) as DurableJob;
+    setJobs(current => current.map(job => job.job_id === jobId ? updated : job));
+  }
+
   return (
     <div className="app-shell">
       <Sidebar activeId="task-queue" />
@@ -93,6 +117,37 @@ export function TaskQueue() {
         </div>
 
         <div className="app-content">
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-head">
+              <span className="card-title">Durable Jobs</span>
+              <span className="card-meta">persisted worker queue</span>
+            </div>
+            <div className="task-feed-body">
+              {!loadError && jobs.length === 0 && <EmptyMessage>No durable jobs queued yet.</EmptyMessage>}
+              {jobs.map(job => {
+                const active = job.status === 'queued' || job.status === 'running';
+                const good = job.status === 'completed';
+                const bad = job.status === 'failed' || job.status === 'cancelled';
+                const dotColor = good ? '#00d4a0' : bad ? '#ff4d6a' : '#f5c040';
+                const badgeClass = good ? 'badge badge-green' : bad ? 'badge badge-red' : 'badge badge-yellow';
+                return (
+                  <div key={job.job_id} className="task-row">
+                    <span className="task-dot" style={{ background: dotColor }} />
+                    <span className="task-skill">{job.job_id.slice(0, 8)}</span>
+                    <span className="system-desc">priority {job.priority}</span>
+                    <span className="task-spacer" />
+                    <span className={badgeClass}>{job.status}</span>
+                    {active && (
+                      <button className="notif-item-link" onClick={() => cancelJob(job.job_id)}>
+                        Cancel
+                      </button>
+                    )}
+                    <span className="task-time">{timeAgo(job.created_at)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
           <div className="card">
             <div className="card-head">
               <span className="card-title">Recent Tasks</span>

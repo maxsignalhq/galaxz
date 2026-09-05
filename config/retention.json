@@ -1,0 +1,9 @@
+{
+  "retention_days": {
+    "jobs": 90,
+    "tasks": 90,
+    "goals": 365,
+    "reviews": 365,
+    "artifacts": 365
+  }
+}

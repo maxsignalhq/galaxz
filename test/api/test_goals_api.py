@@ -55,6 +55,8 @@ def _build_andromeda(tmp_path):
 @pytest.fixture
 def client(monkeypatch, tmp_path):
     monkeypatch.setenv("GALAXZ_API_KEY", "test-key")
+    monkeypatch.setenv("JOB_DB_PATH", str(tmp_path / "jobs.db"))
+    monkeypatch.setattr(svc, "_job_repository", None)
     svc.app.middleware_stack = None
     a = _build_andromeda(tmp_path)
     monkeypatch.setattr(svc, "boot", lambda: a)
@@ -101,3 +103,23 @@ def test_resume_409_when_running(client):
 
 def test_goals_route_requires_auth(client):
     assert client.post("/goals", json={"objective": "x"}).status_code == 401
+
+
+def test_pause_resume_and_cancel_goal_controls_are_idempotent(client):
+    gid = client.post("/goals", json={"objective": "x"}, headers=AUTH).json()["goal"]["goal_id"]
+    paused = client.post(
+        f"/goals/{gid}/pause", json={"reason": "maintenance"}, headers=AUTH
+    )
+    assert paused.status_code == 200
+    assert paused.json()["goal"]["status"] == "paused"
+    assert client.post(f"/goals/{gid}/pause", json={}, headers=AUTH).status_code == 200
+
+    resumed = client.post(f"/goals/{gid}/resume", headers=AUTH)
+    assert resumed.status_code == 202
+    cancelled = client.post(
+        f"/goals/{gid}/cancel", json={"reason": "operator request"}, headers=AUTH
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["goal"]["status"] == "cancelled"
+    repeated = client.post(f"/goals/{gid}/cancel", json={}, headers=AUTH)
+    assert repeated.status_code == 200

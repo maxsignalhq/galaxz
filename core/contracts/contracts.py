@@ -21,6 +21,7 @@ class TaskContract(BaseModel):
     deadline_ms: int | None = Field(default=None, ge=0)
     workspace_root: str | None = None  # set by Andromeda from WorkspaceConfig; None when workspace is disabled
     output_path: str | None = None     # caller-specified filename; threaded to context when workspace is enabled
+    execution_attempt_id: UUID | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("origin", "skill")
@@ -145,8 +146,12 @@ class TrainingExample(BaseModel):
     exported_at: Optional[datetime] = None
 
 
-GoalStatus = Literal["planning", "ready", "running", "paused", "complete", "failed"]
-PlannedTaskStatus = Literal["pending", "running", "complete", "failed", "escalated"]
+GoalStatus = Literal[
+    "planning", "ready", "running", "paused", "complete", "failed", "cancelled"
+]
+PlannedTaskStatus = Literal[
+    "pending", "running", "complete", "failed", "escalated", "blocked", "cancelled"
+]
 
 
 class GoalContract(BaseModel):

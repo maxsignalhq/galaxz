@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "galaxz"
+version = "1.0.0"
+requires-python = ">=3.11"
+
+[project.scripts]
+galaxz = "cli.run:galaxz"
+
+[tool.setuptools.packages.find]
+include = ["agents*", "cli*", "core*", "orion*", "services*", "workspace*"]
+
+[tool.setuptools.package-data]
+"core.pulsar" = ["config/*.yaml", "schema.sql"]
+orion = ["config/*.yaml", "data/*.sql"]
+"core.storage.migrations" = ["*.sql"]

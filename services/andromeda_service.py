@@ -24,8 +24,14 @@ from services.file_writer import FileWriter
 from core.aether.client import AetherClient, get_aether_client
 from core.artifacts.store import identity_key
 from core.contracts import TaskContract
+from core.contracts import RetryPolicy
+from core.jobs import InvalidJobState
+from core.jobs import PostgresJobRepository, SqliteJobRepository
+from core.goals import DurableGoalCoordinator
+from core.repositories import RepositoryAccessError, RepositoryStore
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
+from core.storage.manage import validate_runtime_database_configuration
 from orion.core.candidate_client import CandidateClient, CandidateNotFoundError
 from orion.core.dataset_store import DatasetStore
 
@@ -55,11 +61,30 @@ _andromeda: Andromeda = None
 _aether: AetherClient = None
 _candidate_client: CandidateClient = None
 _start_time: float = 0.0
+_job_repository: SqliteJobRepository | PostgresJobRepository | None = None
+_repository_store = RepositoryStore()
+
+
+def _jobs() -> SqliteJobRepository | PostgresJobRepository:
+    global _job_repository
+    database = os.getenv("GALAXZ_DATABASE_URL") or os.getenv("JOB_DB_PATH", "data/jobs.db")
+    if _job_repository is None or _job_repository.database != database:
+        _job_repository = PostgresJobRepository(database) if database.startswith(("postgres://", "postgresql://", "postgresql+")) else SqliteJobRepository(database)
+    return _job_repository
+
+
+def _goal_coordinator() -> DurableGoalCoordinator:
+    return DurableGoalCoordinator(
+        _andromeda.goal_store,
+        _jobs(),
+        review_queue=_andromeda.review_queue,
+    )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _andromeda, _aether, _candidate_client, _start_time
+    validate_runtime_database_configuration()
     _start_time = time.monotonic()
     _andromeda = boot()
     _aether = get_aether_client()
@@ -96,6 +121,12 @@ class TaskRequest(BaseModel):
     session_context: list[TaskSessionContextItem] = Field(default_factory=list)
 
 
+class JobRequest(TaskRequest):
+    idempotency_key: str
+    priority: int = Field(default=0, ge=-100, le=100)
+    retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
+
+
 class ResolveRequest(BaseModel):
     reviewer_notes: Optional[str] = None
 
@@ -113,11 +144,27 @@ class ArtifactRollbackRequest(BaseModel):
     path: str
     workspace_root: str = ""
     version: int
+    project_id: str | None = None
+    organization_id: str | None = None
 
 
 class GoalRequest(BaseModel):
     objective: str
     confidence_threshold: float = 0.65
+    repository_id: str | None = None
+    base_revision: str = "HEAD"
+
+
+class RepositoryRequest(BaseModel):
+    provider: str
+    owner: str
+    name: str
+    installation_scope: str
+    local_path: str | None = None
+
+
+class GoalControlRequest(BaseModel):
+    reason: str | None = None
 
 
 _SHORT_SKILL_ALIASES = {
@@ -367,6 +414,18 @@ def _route_one(
     return _andromeda.route(task=task)
 
 
+def _task_contract(req: TaskRequest) -> TaskContract:
+    skill_id = _normalize_skill_id(req.skill_id)
+    effective_task_text = _task_text_with_session_context(req.task, req.session_context)
+    return TaskContract(
+        task_id=uuid4(),
+        origin="andromeda_api",
+        skill=skill_id,
+        payload=_payload_for_skill(skill_id, effective_task_text),
+        confidence_threshold=0.65,
+    )
+
+
 def _route_code_then_qa(
     task_text: str,
     session_context: Optional[list[TaskSessionContextItem]] = None,
@@ -497,6 +556,62 @@ def post_task(req: TaskRequest):
     }
 
 
+@app.post("/jobs", status_code=202)
+def post_job(req: JobRequest):
+    """Persist a task for execution by a dedicated durable worker."""
+    task = _task_contract(req)
+    try:
+        job = _jobs().enqueue(
+            task_id=task.task_id,
+            task=task,
+            idempotency_key=req.idempotency_key,
+            priority=req.priority,
+            retry_policy=req.retry_policy,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return job.model_dump(mode="json")
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: UUID):
+    repository = _jobs()
+    job = repository.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    return {
+        "job": job.model_dump(mode="json"),
+        "result": repository.get_result(job_id),
+        "attempts": [attempt.model_dump(mode="json") for attempt in repository.attempts(job_id)],
+        "transitions": repository.transitions(job_id),
+    }
+
+
+@app.get("/jobs")
+def list_jobs(limit: int = 50):
+    try:
+        jobs = _jobs().list_jobs(limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return [job.model_dump(mode="json") for job in jobs]
+
+
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: UUID):
+    try:
+        job = _jobs().cancel(job_id=job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="job not found") from exc
+    except ValueError as exc:
+        existing = _jobs().get_job(job_id)
+        if existing is not None and existing.status.value == "cancelled":
+            return existing.model_dump(mode="json")
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except InvalidJobState as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return job.model_dump(mode="json")
+
+
 @app.get("/review/queue")
 def get_review_queue():
     return _andromeda.review_queue.get_pending()
@@ -538,16 +653,20 @@ def list_artifacts():
 
 
 @app.get("/artifacts/history")
-def get_artifact_history(path: str, workspace_root: str = ""):
+def get_artifact_history(path: str, workspace_root: str = "", project_id: str | None = None, organization_id: str | None = None):
     key = identity_key(workspace_root, path)
     history = _andromeda.artifact_store.history(key)
     if not history:
         raise HTTPException(status_code=404, detail="no versions found for this path")
+    try:
+        _andromeda.artifact_store.get_version(key, history[0]["version"], project_id=project_id, organization_id=organization_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return history
 
 
 @app.get("/artifacts/diff")
-def get_artifact_diff(path: str, workspace_root: str = "", from_: int | None = None, to: int | None = None):
+def get_artifact_diff(path: str, workspace_root: str = "", from_: int | None = None, to: int | None = None, project_id: str | None = None, organization_id: str | None = None):
     key = identity_key(workspace_root, path)
     latest = _andromeda.artifact_store.latest_version_number(key)
     if latest is None:
@@ -557,7 +676,10 @@ def get_artifact_diff(path: str, workspace_root: str = "", from_: int | None = N
     to_version = to if to is not None else latest
 
     try:
+        _andromeda.artifact_store.get_version(key, to_version, project_id=project_id, organization_id=organization_id)
         diff_text = _andromeda.artifact_store.diff(key, from_version, to_version)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError:
         raise HTTPException(status_code=404, detail="requested version not found")
 
@@ -567,7 +689,10 @@ def get_artifact_diff(path: str, workspace_root: str = "", from_: int | None = N
 @app.post("/artifacts/rollback")
 def rollback_artifact(req: ArtifactRollbackRequest):
     key = identity_key(req.workspace_root, req.path)
-    row = _andromeda.artifact_store.get_version(key, req.version)
+    try:
+        row = _andromeda.artifact_store.get_version(key, req.version, project_id=req.project_id, organization_id=req.organization_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     if row is None:
         raise HTTPException(status_code=404, detail="version not found")
 
@@ -599,11 +724,21 @@ def _resume_goal_from_review(queue_task_id: str, goal_id: str, approved: bool) -
     gid = UUID(goal_id)
     if queue_task_id.startswith("plan:"):
         if approved:
-            _andromeda.goal_runner.run_async(gid)
+            _goal_coordinator().start(gid, actor="review")
         else:
             _andromeda.goal_store.set_goal_status(gid, "failed")
         return
-    _andromeda.goal_runner.resolve_escalated_task(gid, UUID(queue_task_id), approved)
+    item = _andromeda.review_queue.get_by_task_id(queue_task_id)
+    planned_task_id = item.get("planned_task_id") if item else None
+    resolved_task_id = UUID(planned_task_id or queue_task_id)
+    if approved:
+        _andromeda.goal_store.update_task(resolved_task_id, status="complete")
+        _goal_coordinator().start(gid, actor="review")
+    else:
+        _andromeda.goal_store.update_task(
+            resolved_task_id, status="failed", error="rejected by reviewer"
+        )
+        _andromeda.goal_store.set_goal_status(gid, "failed")
 
 
 @app.post("/goals", status_code=202)
@@ -614,6 +749,14 @@ def create_goal(req: GoalRequest):
         confidence_threshold=req.confidence_threshold,
     )
     _andromeda.goal_store.create_goal(goal)
+    if req.repository_id:
+        try:
+            record = _repository_store.get(req.repository_id)
+            sha = _repository_store.resolve_base(record.repository_id, req.base_revision)
+            _andromeda.goal_store.bind_repository(goal.goal_id, record.repository_id, req.base_revision, sha)
+        except (RepositoryAccessError, ValueError) as exc:
+            _andromeda.goal_store.set_goal_status(goal.goal_id, "failed")
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         plan = _andromeda.goal_planner.plan(goal)
     except PlanValidationError as e:
@@ -637,9 +780,10 @@ def create_goal(req: GoalRequest):
             goal_id=str(goal.goal_id),
         )
     else:
-        _andromeda.goal_runner.run_async(goal.goal_id)
+        _goal_coordinator().start(goal.goal_id, actor="api")
 
     tree = _andromeda.goal_store.goal_tree(goal.goal_id)
+    tree["repository"] = _andromeda.goal_store.repository_binding(goal.goal_id)
     tree["plan_pending_review"] = gated
     return tree
 
@@ -670,7 +814,33 @@ def get_goal(goal_id: str):
         raise HTTPException(status_code=404, detail="goal not found")
     tree = _andromeda.goal_store.goal_tree(gid)
     tree["rollup"] = _andromeda.goal_store.rollup(gid)
+    tree["events"] = _andromeda.goal_store.events(gid)
+    tree["repository"] = _andromeda.goal_store.repository_binding(gid)
+    for project in tree["projects"]:
+        for task in project["tasks"]:
+            if task["job_id"]:
+                job_id = UUID(task["job_id"])
+                task["attempts"] = [
+                    attempt.model_dump(mode="json") for attempt in _jobs().attempts(job_id)
+                ]
+                task["transitions"] = _jobs().transitions(job_id)
     return tree
+
+
+@app.post("/repositories", status_code=201)
+def register_repository(req: RepositoryRequest):
+    try:
+        return _repository_store.register(**req.model_dump()).__dict__
+    except (RepositoryAccessError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/repositories/{repository_id}")
+def get_repository(repository_id: str):
+    try:
+        return _repository_store.get(repository_id).__dict__
+    except RepositoryAccessError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/goals/{goal_id}/resume", status_code=202)
@@ -684,8 +854,47 @@ def resume_goal(goal_id: str):
         raise HTTPException(status_code=404, detail="goal not found")
     if goal.status not in ("ready", "paused"):
         raise HTTPException(status_code=409, detail=f"goal is {goal.status}, cannot resume")
-    _andromeda.goal_runner.run_async(gid)
+    _goal_coordinator().start(gid, actor="api")
     return _andromeda.goal_store.goal_tree(gid)
+
+
+@app.post("/goals/{goal_id}/pause")
+def pause_goal(goal_id: UUID, req: GoalControlRequest = GoalControlRequest()):
+    try:
+        _goal_coordinator().pause(goal_id, actor="api", reason=req.reason)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="goal not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _andromeda.goal_store.goal_tree(goal_id)
+
+
+@app.post("/goals/{goal_id}/cancel")
+def cancel_goal(goal_id: UUID, req: GoalControlRequest = GoalControlRequest()):
+    try:
+        _goal_coordinator().cancel(goal_id, actor="api", reason=req.reason)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="goal not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _andromeda.goal_store.goal_tree(goal_id)
+
+
+@app.post("/goals/{goal_id}/tasks/{task_id}/rerun", status_code=202)
+def rerun_goal_task(
+    goal_id: UUID,
+    task_id: UUID,
+    req: GoalControlRequest = GoalControlRequest(),
+):
+    try:
+        _goal_coordinator().rerun(
+            goal_id, task_id, actor="api", reason=req.reason
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="goal or task not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _andromeda.goal_store.goal_tree(goal_id)
 
 
 @app.get("/status")

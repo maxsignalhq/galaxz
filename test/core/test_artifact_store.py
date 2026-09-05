@@ -82,3 +82,21 @@ def test_list_files_returns_latest_version_per_identity_key(store):
     assert files["/w::a.py"]["latest_version"] == 2
     assert files["/w::a.py"]["task_id"] == "t2"
     assert files["/w::b.py"]["latest_version"] == 1
+
+
+def test_attempt_scoped_artifact_is_immutable_across_duplicate_delivery(store):
+    first = store.record(
+        [{"filename": "result.py", "content": "first"}],
+        workspace_root="/workspace", task_id="task", skill="skill",
+        attempt_id="attempt-1",
+    )
+    duplicate = store.record(
+        [{"filename": "result.py", "content": "different late payload"}],
+        workspace_root="/workspace", task_id="task", skill="skill",
+        attempt_id="attempt-1",
+    )
+
+    assert first[0]["recorded"] is True
+    assert duplicate == [{**first[0], "recorded": False}]
+    version = store.get_version(first[0]["identity_key"], first[0]["version"])
+    assert version["content"] == "first"

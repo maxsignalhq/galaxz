@@ -1,0 +1,16 @@
+.git
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.env
+data
+orion/data/*.db
+orion/data/datasets
+prism/node_modules
+test/UI/node_modules
+dist
+build
+*.egg-info

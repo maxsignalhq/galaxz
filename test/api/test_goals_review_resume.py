@@ -24,6 +24,8 @@ class FakeAether:
 @pytest.fixture
 def setup(monkeypatch, tmp_path):
     monkeypatch.setenv("GALAXZ_API_KEY", "test-key")
+    monkeypatch.setenv("JOB_DB_PATH", str(tmp_path / "jobs.db"))
+    monkeypatch.setattr(svc, "_job_repository", None)
     svc.app.middleware_stack = None
 
     from agents.andromeda.orchestrator import Andromeda
@@ -57,10 +59,12 @@ def test_approve_resumes_goal(setup):
     client, calls, gid, tid = setup
     r = client.post(f"/review/queue/{tid}/approve", headers=AUTH)
     assert r.status_code == 200
-    assert calls == [(gid, tid, True)]
+    assert svc._andromeda.goal_store.get_goal(gid).status == "complete"
+    assert svc._andromeda.goal_store.get_tasks(gid)[0].status == "complete"
 
 
 def test_reject_fails_goal_task(setup):
     client, calls, gid, tid = setup
     client.post(f"/review/queue/{tid}/reject", headers=AUTH)
-    assert calls == [(gid, tid, False)]
+    assert svc._andromeda.goal_store.get_goal(gid).status == "failed"
+    assert svc._andromeda.goal_store.get_tasks(gid)[0].status == "failed"

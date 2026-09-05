@@ -1,0 +1,26 @@
+name: galaxz-postgres-test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: galaxz_test
+      POSTGRES_PASSWORD: integration-placeholder
+      POSTGRES_DB: galaxz_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U galaxz_test -d galaxz_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  migration-tests:
+    build: .
+    image: galaxz-postgres-test:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      GALAXZ_TEST_POSTGRES_URL: postgresql+psycopg2://galaxz_test:integration-placeholder@postgres:5432/galaxz_test
+    command: python -m pytest -q test/storage

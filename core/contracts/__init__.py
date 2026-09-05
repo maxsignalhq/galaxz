@@ -14,20 +14,34 @@ from .contracts import (
     TrainingExample,
     validate_feedback_event,
 )
+from .jobs import (
+    AttemptOutcome,
+    ExecutionAttempt,
+    Job,
+    JobStatus,
+    RetryPolicy,
+    validate_job_transition,
+)
 
 __all__ = [
+    "AttemptOutcome",
     "ExampleSource",
+    "ExecutionAttempt",
     "FeedbackEvent",
     "GoalContract",
     "GoalStatus",
+    "Job",
+    "JobStatus",
     "OutcomeType",
     "PlannedTask",
     "PlannedTaskStatus",
     "ProjectNode",
     "RefineryFeedbackEvent",
+    "RetryPolicy",
     "SkillDefinition",
     "SkillManifest",
     "TaskContract",
     "TrainingExample",
     "validate_feedback_event",
+    "validate_job_transition",
 ]

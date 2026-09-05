@@ -58,7 +58,10 @@ def test_update_task_and_rollup(store):
     store.update_task(tasks[0].task_id, status="complete", confidence=0.9)
     store.update_task(tasks[1].task_id, status="complete", confidence=0.7)
     r = store.rollup(g.goal_id)
-    assert r == {"status": "ready", "completed": 2, "total": 2, "min_confidence": 0.7}
+    assert r == {
+        "status": "ready", "completed": 2, "total": 2, "min_confidence": 0.7,
+        "blocked": 0, "failed": 0, "escalated": 0, "cancelled": 0,
+    }
 
 
 def test_try_claim_is_single_winner(store):
