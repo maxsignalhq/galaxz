@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies and Galaxz CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install --no-deps .
+      - name: Compile Python sources
+        run: python -m compileall -q agents cli core orion services test
+      - name: Run Python tests
+        run: pytest -q test
+
+  prism:
+    name: Prism checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prism
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: prism/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  postgres-migrations:
+    name: PostgreSQL migrations
+    runs-on: ubuntu-latest
+    needs: python
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test explicit migrations against isolated PostgreSQL
+        run: docker compose -f docker-compose.postgres-test.yml run --build --rm migration-tests
+      - name: Show database logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.postgres-test.yml logs --no-color
+      - name: Stop isolated database
+        if: always()
+        run: docker compose -f docker-compose.postgres-test.yml down
+
+  containers:
+    name: Integration containers
+    runs-on: ubuntu-latest
+    needs: [python, prism]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: docker compose -f docker-compose.integration.yml config --quiet
+      - name: Start isolated stack
+        run: docker compose -f docker-compose.integration.yml up --build --wait
+      - name: Verify service and proxy health
+        run: |
+          curl --fail --show-error http://127.0.0.1:18001/health
+          curl --fail --show-error http://127.0.0.1:18001/status
+          curl --fail --show-error http://127.0.0.1:18003/health
+          curl --fail --show-error http://127.0.0.1:15173/api/health
+      - name: Verify packaged CLI inside the application container
+        run: |
+          docker compose -f docker-compose.integration.yml exec -T galaxz galaxz --help
+          docker compose -f docker-compose.integration.yml exec -T galaxz galaxz vega --help
+          docker compose -f docker-compose.integration.yml exec -T galaxz galaxz route \
+            --skill rigel.skill.code_generation \
+            --payload '{"spec":"Return a deterministic integration smoke function."}'
+      - name: Submit and verify a persisted task
+        run: python test/integration/smoke_task.py
+      - name: Verify completion evidence across API and worker recreation
+        run: python test/integration/completion_publication.py
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.integration.yml logs --no-color
+      - name: Stop isolated stack
+        if: always()
+        run: docker compose -f docker-compose.integration.yml down --volumes

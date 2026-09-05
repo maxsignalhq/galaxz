@@ -63,7 +63,7 @@ def route(skill, payload, config, output):
         payload_dict = json.loads(payload)
 
         from boot import boot
-        andromeda = boot()
+        andromeda = boot(config_path=config)
 
         task = TaskContract(
             task_id=uuid4(),

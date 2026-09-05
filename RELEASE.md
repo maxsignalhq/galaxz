@@ -26,13 +26,14 @@ cp .env.example .env          # add your ANTHROPIC_API_KEY
 docker compose up --build -d
 ```
 
-This starts Aether, Pulsar, and Andromeda (with Vega/Rigel running in-process) in dependency order.
+This starts Aether, Pulsar, Andromeda (with Vega/Rigel running in-process), and the
+Prism operator UI in dependency order. Prism is served at http://localhost:5173 and
+proxies API calls to Andromeda inside the Compose network.
 
-**Prism is not yet part of `docker-compose.yml`** — there's no Dockerfile for it and its dev-server
-proxy is hardcoded to `localhost:8001`, so it needs to run outside Compose for now:
+To run Prism against a local (non-Docker) Andromeda instead, start it in dev mode:
 
 ```bash
-cd prism && npm install && npm run dev   # http://localhost:5173
+cd prism && npm install && npm run dev   # http://localhost:5173, proxies to localhost:8001
 ```
 
 ---
@@ -59,6 +60,7 @@ See [`docs/decisions/auth-boundary.md`](docs/decisions/auth-boundary.md) for the
 ## What's Next
 
 - **Goal and project hierarchy** — first-class project objects that group related tasks, track cumulative confidence, and surface progress in Prism
-- **Artifact store** — persistent, queryable storage for all generated code, reports, and test suites with diff and rollback support
+
+~~Artifact store~~ — shipped: `core/artifacts/store.py` records every produced artifact with versioned history; `Andromeda.route()` writes through it; exposed via `GET /artifacts`, `/artifacts/history`, `/artifacts/diff`, `POST /artifacts/rollback` and the Prism **Artifacts** page (diff + rollback).
 
 ~~Workspace path feature~~ — shipped: `TaskContract.output_path` is threaded through `Andromeda.route()` into task context and consumed by Rigel (`agents/rigel/agent.py`) to override the inferred output filename. See `workspace/`, `test/workspace/`, and the workspace-related tests in `test/api/test_andromeda_api.py`.

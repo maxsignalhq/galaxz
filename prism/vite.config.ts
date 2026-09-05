@@ -30,7 +30,7 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8001',
+        target: process.env.VITE_API_TARGET ?? 'http://localhost:8001',
         changeOrigin: true,
         headers: galaxzApiKey ? { Authorization: `Bearer ${galaxzApiKey}` } : undefined,
         rewrite: (path) => path.replace(/^\/api/, ''),

@@ -50,12 +50,80 @@ docker compose --profile distributed-agents up --build
 
 **Step 4 — Run your first task**
 ```bash
-docker compose exec galaxz python -m galaxz.cli route \
+docker compose exec galaxz galaxz route \
   --skill rigel.skill.code_generation \
   --payload '{"spec": "validate email address", "language": "python"}'
 ```
 
 Expected output: `task_id`, `assigned_agent: rigel`, `status: complete`, `confidence: ~0.84`
+
+For durable execution, submit to the job API and poll the returned identifier:
+
+```bash
+curl -X POST http://localhost:8001/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{"task":"validate email address","skill_id":"code_generation","idempotency_key":"example-1"}'
+curl http://localhost:8001/jobs/JOB_ID
+```
+
+The separate `worker` service claims persisted jobs, renews leases, retries
+classified transient failures, and prevents stale workers from overwriting a
+completed result. The existing `/task` endpoint remains the synchronous
+migration path. See [job storage operations](docs/operations/job-storage.md).
+
+Goal DAGs also execute through durable jobs and survive API or worker restarts.
+See [durable goal operations](docs/operations/durable-goals.md) and the
+[result-substitution contract](docs/contracts/goal-result-substitution.md).
+
+### Integration environment
+
+Use the isolated integration stack for reproducible service-level checks. It
+uses placeholder provider credentials, temporary container state, and dedicated
+host ports, so it does not read or modify the developer stack's `.env` or data.
+
+```bash
+docker compose -f docker-compose.integration.yml up --build --wait
+curl --fail http://localhost:18001/health
+curl --fail http://localhost:18003/health
+curl --fail http://localhost:15173/api/health
+docker compose -f docker-compose.integration.yml down --volumes
+```
+
+The checked-in Andromeda OpenAPI document is a regression contract. Intentional
+HTTP API changes must include an explicit compatibility, versioning, or
+migration decision before the contract is reviewed and exported:
+
+```bash
+.venv/bin/python -m scripts.export_openapi_contract
+.venv/bin/pytest -q test/api/test_openapi_contract.py
+```
+
+To reproduce the complete production baseline from a clean checkout, run:
+
+```bash
+bash scripts/verify_production_baseline.sh
+```
+
+### Continuous integration
+
+The required CI jobs can also be reproduced independently:
+
+```bash
+# Python
+.venv/bin/python -m compileall -q agents cli core orion services test
+.venv/bin/pytest -q test
+
+# Prism
+npm --prefix prism ci
+npm --prefix prism run typecheck
+npm --prefix prism run build
+
+# Containers and HTTP smoke contract
+docker compose -f docker-compose.integration.yml up --build --wait
+.venv/bin/python test/integration/smoke_task.py
+.venv/bin/python test/integration/crash_recovery.py
+docker compose -f docker-compose.integration.yml down --volumes
+```
 
 ---
 
@@ -75,6 +143,14 @@ Set `GALAXZ_API_KEY` in `.env` to secure your deployment. Omit it for local deve
 | Pulsar    | Skill Registry        | ✅ Live |
 | Aether    | Message Bus (Redis)   | ✅ Live |
 | Orion     | Data Refinery         | ✅ Live |
+
+---
+
+## Production roadmap
+
+See [docs/phases.md](docs/phases.md) for the production-readiness phases, Jira
+delivery sequence, current starting point, and continuation protocol for coding
+agents.
 
 ---
 

@@ -34,7 +34,18 @@ from agents.rigel.agent import RigelAgent
 from agents.rigel.config import RigelConfig
 from agents.vega.agent import VegaAgent
 from agents.vega import pipeline as vega_pipeline
-from core.contracts import FeedbackEvent, OutcomeType, RefineryFeedbackEvent, TaskContract
+from agents.andromeda.planner import PlanResult
+from core.contracts import (
+    FeedbackEvent,
+    GoalContract,
+    OutcomeType,
+    PlannedTask,
+    ProjectNode,
+    RefineryFeedbackEvent,
+    TaskContract,
+)
+from core.contracts import SkillDefinition, SkillManifest
+from core.goals.store import GoalStore
 from core.llm.provider import ProviderConfig
 from core.pulsar.registry import PulsarRegistry
 from orion import OrionService
@@ -202,6 +213,7 @@ def main() -> int:
         ("vega_pipeline", lambda: run_vega_eval(dataset, corpus)),
         ("rigel_skills", lambda: run_rigel_eval(corpus)),
         ("andromeda_routing", lambda: run_andromeda_eval(corpus)),
+        ("goal_execution", lambda: run_goal_execution_eval()),
         ("cli_surface", lambda: run_cli_eval()),
         ("api_surface", lambda: run_api_eval()),
         ("orion_pipeline", lambda: run_orion_eval()),
@@ -474,6 +486,70 @@ def run_andromeda_eval(corpus: DeterministicCorpus) -> EvalCaseResult:
             "vega_task_id": vega_state["task_id"],
             "rigel_task_id": rigel_state["task_id"],
         }
+    return result
+
+
+def run_goal_execution_eval() -> EvalCaseResult:
+    result = EvalCaseResult(suite="goal_execution", status="passed")
+    with TemporaryDirectory(prefix="galaxz-eval-goal-") as temp_dir:
+        registry = PulsarRegistry(db_path=str(Path(temp_dir) / "pulsar.db"))
+        task_log = TaskLog(db_path=str(Path(temp_dir) / "tasks.db"))
+        artifact_store = ArtifactStore(db_path=str(Path(temp_dir) / "artifacts.db"))
+        goal_store = GoalStore(db_path=str(Path(temp_dir) / "goals.db"))
+
+        class _EchoAgent:
+            def run(self, skill_id, payload, context):
+                return {"result": {"ok": True}, "confidence": 0.9}
+
+        registry.register(
+            SkillManifest(
+                agent_id="echo",
+                agent_name="Echo",
+                version="1.0.0",
+                health_endpoint="/health",
+                skills=[
+                    SkillDefinition(
+                        skill_id="echo.skill.step",
+                        description="echo step",
+                        input_schema={},
+                        output_schema={},
+                    )
+                ],
+            )
+        )
+        router = Andromeda(
+            registry,
+            task_log,
+            agents={"echo": _EchoAgent()},
+            artifact_store=artifact_store,
+            goal_store=goal_store,
+        )
+
+        goal = GoalContract(origin="eval", objective="two-step echo goal", confidence_threshold=0.65)
+        goal_store.create_goal(goal)
+        project = ProjectNode(goal_id=goal.goal_id, title="echo project")
+        t1 = PlannedTask(project_id=project.project_id, goal_id=goal.goal_id, skill="echo.skill.step", payload={})
+        t2 = PlannedTask(
+            project_id=project.project_id, goal_id=goal.goal_id, skill="echo.skill.step",
+            payload={}, depends_on=[t1.task_id],
+        )
+        router.goal_planner.plan = lambda g: PlanResult(projects=[project], tasks=[t1, t2], plan_confidence=0.9)
+
+        plan = router.goal_planner.plan(goal)
+        goal_store.save_plan(goal.goal_id, plan.projects, plan.tasks, plan.plan_confidence, gated=False)
+        router.goal_runner.run(goal.goal_id)
+
+        final = goal_store.get_goal(goal.goal_id)
+        roll = goal_store.rollup(goal.goal_id)
+        _expect(final.status == "complete", "Goal runner completes a two-step echo DAG")
+        _expect(roll["completed"] == 2, "Goal rollup reports both tasks complete")
+        _expect(roll["total"] == 2, "Goal rollup reports the full task count")
+        result.checks.extend([
+            "Goal DAG completion",
+            "Goal rollup completed count",
+            "Goal rollup total count",
+        ])
+        result.artifacts = {"goal_id": str(goal.goal_id), "status": final.status}
     return result
 
 

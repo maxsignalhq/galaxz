@@ -1,29 +1,57 @@
 # Project Review
 
-## Findings
+_Last refreshed: 2026-08-28._
 
-1. High: `test/api/test_andromeda_api.py` is stale against the current FastAPI service. The tests still expect `/health` to return registry details, while `services/andromeda_service.py` now returns a fixed service health payload. The tests also call protected write endpoints without bearer auth, while `ApiKeyMiddleware` enforces `GALAXZ_API_KEY` when configured. Current focused run: `3 failed`.
-2. Medium: `agents/andromeda/orchestrator.py` accepts `TaskContract.confidence_threshold` but routing decisions still use hard-coded `0.65` and `0.40` thresholds. The contract carries a threshold that the router does not honor.
-3. Medium: `core/contracts/contracts.py` no longer matches the constitutional task envelope documented in `CLAUDE.md`. The code now uses `origin`, `skill`, and `confidence_threshold`; the project constitution still describes `type`, `context`, `priority`, and `origin_agent`. That drift increases integration risk for future agents.
+## Current State
 
-## Resolved Since Prior Review
+The three findings in the prior version of this report are all resolved:
 
-1. `OrionService.ingest()` now writes accepted examples under `config.dataset_path` and rejected examples under a configured sibling `quarantine/` directory. The eval harness now asserts that legacy hard-coded `orion_datasets/` output is not produced.
+1. **`test/api/test_andromeda_api.py` stale** — resolved. The suite was already brought in
+   line with the current FastAPI service (fixed `/health` assertions, bearer-auth headers on
+   protected write endpoints) in commit `fb4fe70`. Focused run today: `10 passed`.
+2. **`confidence_threshold` not honored by the router** — resolved in commit `591a5a2`.
+   `AndromedaState` now carries `confidence_threshold`, `Andromeda.route()` threads
+   `TaskContract.confidence_threshold` into it, and `_after_execute` prefers the per-task
+   value over the agent's global completion default (falling back to it when absent). The
+   `0.40` failure threshold stays global by design. Covered by
+   `test/agents/test_andromeda_confidence_threshold.py`.
+3. **Contract-shape drift vs. `CLAUDE.md`** — resolved. `CLAUDE.md`'s "Three Core Contracts"
+   section now matches `core/contracts/contracts.py` (`origin` / `skill` /
+   `confidence_threshold`, not the retired `type` / `context` / `priority` / `origin_agent`).
+   No other checked-in doc referenced the stale shape.
+
+## Shipped Since Prior Review
+
+- **Artifact store** (PR #1): `core/artifacts/store.py` `ArtifactStore` records every produced
+  artifact with versioned history; `Andromeda.route()` writes through it; the Andromeda
+  service exposes `GET /artifacts`, `GET /artifacts/history`, `GET /artifacts/diff`, and
+  `POST /artifacts/rollback`.
+- **pytest collection error** fixed: the `rigel.skill.test_writing` entrypoint was renamed
+  (`agents/rigel/skills/write_tests.py::write_tests`) so pytest no longer tries to collect it
+  as a test. Full suite: `130 passed, 5 skipped`.
+
+## Shipped 2026-08-28 (this pass)
+
+- **Goal/project hierarchy** — `GoalContract` / `ProjectNode` / `PlannedTask`, `GoalStore`
+  (SQLite), `GoalPlanner` (one LLM call, skill validation, DAG cycle detection),
+  `GoalRunner` (dependency-ordered execution on a daemon thread, escalate-and-pause,
+  resume via the review queue), `/goals` + `/goals/{id}` + `/goals/{id}/resume` endpoints,
+  and a Prism **Goals** page. Spec `docs/specs/2026-08-28-goal-project-hierarchy-design.md`,
+  plan `docs/plans/2026-08-28-goal-project-hierarchy.md`.
+- **Prism containerization** — `prism/Dockerfile` + `nginx.conf.template`, env-configurable
+  proxy target, `prism` service in `docker-compose.yml`. (Docker image build unverified —
+  no daemon in the dev environment.)
+- **Artifact-store operator UI** — `prism/src/pages/Artifacts.tsx` over `/artifacts/*`.
+
+## Remaining Backlog
+
+- **v2-scope, deferred** — multi-tenancy, user accounts/roles, OAuth/SSO, per-agent auth,
+  audit logging, and executing (not just curating) fine-tune training runs.
 
 ## Coverage Gaps In Existing Tests
 
-1. The deterministic eval harness now covers the cross-system feedback handshake, but normal pytest coverage still focuses on isolated units and has drifted for the API surface.
-2. The eval harness now covers Click CLI behavior, but repository pytest coverage still does not.
-3. Heuristic behavior exists, but the repo mostly skips Redis-backed end-to-end execution in normal local runs.
+Unchanged from the prior review:
 
-## Eval Design Response
-
-The eval harness adds deterministic end-to-end coverage for:
-- contracts and registry behavior,
-- Vega pipeline across finance, health, hospitality, and retail scenarios,
-- Rigel skills and execution calibration,
-- Andromeda routing for Vega, Rigel, and no-match cases,
-- CLI and API entrypoints, including bearer auth, status, review queue, and fine-tune queue flows,
-- Orion ingest, extraction, heuristic emission, and cross-system feedback compatibility.
-
-Latest eval result: `8 passed`, `0 failed`.
+1. Normal pytest coverage focuses on isolated units; the deterministic end-to-end
+   cross-system handshake lives only in the eval harness (`evals/run_evals.py`).
+2. Redis-backed end-to-end execution is skipped in normal local runs.

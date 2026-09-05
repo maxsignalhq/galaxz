@@ -1,0 +1,22 @@
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # SPA fallback — client-side router owns all non-asset paths.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Mirror the Vite dev-server proxy: strip the /api prefix, forward to Andromeda,
+    # attach the bearer token when GALAXZ_API_KEY is set (must match the value the
+    # Andromeda service loads from .env).
+    location /api/ {
+        proxy_pass ${API_TARGET}/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Authorization "Bearer ${GALAXZ_API_KEY}";
+    }
+}

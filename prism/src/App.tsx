@@ -9,6 +9,8 @@ import { TaskQueue }      from './pages/TaskQueue';
 import { ReviewQueue }    from './pages/ReviewQueue';
 import { OrionAnalytics } from './pages/OrionAnalytics';
 import { Settings }       from './pages/Settings';
+import { Artifacts }      from './pages/Artifacts';
+import { Goals }          from './pages/Goals';
 
 export default function App() {
   return (
@@ -19,6 +21,8 @@ export default function App() {
       <Route path="/dev-console"  element={<DevConsole />} />
       <Route path="/task-ui"      element={<TaskUI />} />
       <Route path="/review-queue" element={<ReviewQueue />} />
+      <Route path="/artifacts"    element={<Artifacts />} />
+      <Route path="/goals"        element={<Goals />} />
       <Route path="/orion"        element={<OrionAnalytics />} />
       <Route path="/settings"     element={<Settings />} />
       <Route path="*"             element={<Navigate to="/" replace />} />

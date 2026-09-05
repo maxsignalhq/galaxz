@@ -1,7 +1,7 @@
 {
-  "started_at": "2026-05-25T16:06:42.634518+00:00",
-  "completed_at": "2026-05-25T16:06:42.749059+00:00",
-  "duration_seconds": 0.115,
+  "started_at": "2026-08-28T22:52:40.022472+00:00",
+  "completed_at": "2026-08-28T22:52:40.141350+00:00",
+  "duration_seconds": 0.119,
   "dataset_sources": [
     {
       "domain": "finance",
@@ -25,7 +25,7 @@
     }
   ],
   "scenario_count": 4,
-  "passed": 8,
+  "passed": 9,
   "failed": 0,
   "results": [
     {
@@ -52,22 +52,22 @@
       "warnings": [],
       "artifacts": {
         "finance_ach_payroll": {
-          "run_id": "0114d54d-3f22-4f93-a447-5b57a4cbdaeb",
+          "run_id": "d9a9024e-a59b-47e1-a99b-f5a272a8b5e9",
           "feedback_stream": "galaxz.feedback.vega",
           "bugs": 1
         },
         "health_fhir_intake": {
-          "run_id": "4b9f812d-b992-4ae4-b637-104261111116",
+          "run_id": "b55ad56a-8777-4261-8372-19a9dbad3406",
           "feedback_stream": "galaxz.feedback.vega",
           "bugs": 1
         },
         "hospitality_booking": {
-          "run_id": "7b558f21-6ebc-471b-a05b-2e21b195394a",
+          "run_id": "a9769581-f71d-4033-a98d-0001b21d5b77",
           "feedback_stream": "galaxz.feedback.vega",
           "bugs": 1
         },
         "retail_gtin_catalog": {
-          "run_id": "68ab02ce-82f6-412f-abfa-3146fbbdbc01",
+          "run_id": "5482b79f-da95-418b-88a0-39ab7735e1ef",
           "feedback_stream": "galaxz.feedback.vega",
           "bugs": 0
         }
@@ -103,8 +103,23 @@
       ],
       "warnings": [],
       "artifacts": {
-        "vega_task_id": "17d5d4cf-8357-4728-a771-c1b4aea75382",
-        "rigel_task_id": "284d8910-9a78-45ef-814e-3a7349aaa3c3"
+        "vega_task_id": "5c1aea91-e45a-4a11-892c-d18d25f8c370",
+        "rigel_task_id": "13660af7-9561-4806-9eb2-408d954a9c23"
+      },
+      "error": null
+    },
+    {
+      "suite": "goal_execution",
+      "status": "passed",
+      "checks": [
+        "Goal DAG completion",
+        "Goal rollup completed count",
+        "Goal rollup total count"
+      ],
+      "warnings": [],
+      "artifacts": {
+        "goal_id": "f238e723-d148-40bb-bf38-7b55a1d0e69a",
+        "status": "complete"
       },
       "error": null
     },
@@ -149,7 +164,7 @@
           "aether:orion.fine_tune_ready",
           "aether:routing.heuristic_update"
         ],
-        "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-t_gvlwe8/datasets"
+        "ingest_dataset_root": "/var/folders/gy/0hlyycgx1k17_04kb4836njr0000gn/T/galaxz-eval-orion-5bp1wz72/datasets"
       },
       "error": null
     },

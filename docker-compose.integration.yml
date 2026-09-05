@@ -1,0 +1,129 @@
+name: galaxz-integration
+
+services:
+  llm-stub:
+    image: python:3.11-slim
+    volumes:
+      - ./test/integration/llm_stub.py:/app/llm_stub.py:ro
+    command: python -u /app/llm_stub.py
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  aether:
+    image: redis:7-alpine
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  pulsar:
+    build: .
+    image: galaxz-integration:latest
+    depends_on:
+      aether:
+        condition: service_healthy
+    environment: &integration-environment
+      REDIS_URL: redis://aether:6379
+      ORION_REDIS_URL: redis://aether:6379
+      ORION_DB_PATH: /tmp/galaxz/orion/events.db
+      ORION_DATASET_PATH: /tmp/galaxz/orion/datasets
+      JOB_DB_PATH: /var/lib/galaxz/jobs.db
+      GOAL_DB_PATH: /var/lib/galaxz/goals.db
+      REVIEW_DB_PATH: /var/lib/galaxz/reviews.db
+      ARTIFACT_DB_PATH: /var/lib/galaxz/artifacts.db
+      ANTHROPIC_MODEL: test/test-model
+      ANTHROPIC_BASE_URL: http://llm-stub:8000
+      ANTHROPIC_AUTH_TOKEN: integration-placeholder
+      LITELLM_TIMEOUT_SECONDS: "10"
+    ports:
+      - "18003:8003"
+    tmpfs:
+      - /app/data
+      - /tmp/galaxz
+    command: python -u services/pulsar_service.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  galaxz:
+    build: .
+    image: galaxz-integration:latest
+    depends_on:
+      aether:
+        condition: service_healthy
+      llm-stub:
+        condition: service_healthy
+      pulsar:
+        condition: service_healthy
+    environment:
+      <<: *integration-environment
+    ports:
+      - "18001:8001"
+    tmpfs:
+      - /app/data
+      - /tmp/galaxz
+    volumes:
+      - job-data:/var/lib/galaxz
+    command: python -u services/andromeda_service.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  worker:
+    image: galaxz-integration:latest
+    depends_on:
+      aether:
+        condition: service_healthy
+      llm-stub:
+        condition: service_healthy
+      pulsar:
+        condition: service_healthy
+      galaxz:
+        condition: service_healthy
+    environment:
+      <<: *integration-environment
+      WORKER_ID: integration-worker
+      WORKER_LEASE_SECONDS: "10"
+      WORKER_HEARTBEAT_SECONDS: "2"
+    tmpfs:
+      - /app/data
+      - /tmp/galaxz
+    volumes:
+      - job-data:/var/lib/galaxz
+    command: python -u services/worker_service.py
+    restart: on-failure
+
+  prism:
+    build: ./prism
+    image: galaxz-prism-integration:latest
+    depends_on:
+      galaxz:
+        condition: service_healthy
+    environment:
+      API_TARGET: http://galaxz:8001
+    ports:
+      - "15173:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+volumes:
+  job-data:

@@ -166,6 +166,39 @@ def test_task_endpoint_normalizes_rigel_skill_and_routes_payload(monkeypatch):
     ]
 
 
+def test_task_endpoint_allows_requests_when_authentication_is_disabled(monkeypatch):
+    monkeypatch.delenv("GALAXZ_API_KEY", raising=False)
+    andromeda_service.app.middleware_stack = None
+    fake = FakeAndromeda()
+    monkeypatch.setattr(andromeda_service, "boot", lambda: fake)
+    monkeypatch.setattr(andromeda_service, "get_aether_client", lambda: FakeAether())
+
+    with TestClient(andromeda_service.app) as client:
+        response = client.post(
+            "/task",
+            json={"task": "Generate an input validator", "skill_id": "code_generation"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "complete"
+
+
+def test_task_endpoint_rejects_missing_credentials_when_authentication_is_enabled(monkeypatch):
+    _reset_auth(monkeypatch)
+    fake = FakeAndromeda()
+    monkeypatch.setattr(andromeda_service, "boot", lambda: fake)
+    monkeypatch.setattr(andromeda_service, "get_aether_client", lambda: FakeAether())
+
+    with TestClient(andromeda_service.app) as client:
+        response = client.post(
+            "/task",
+            json={"task": "Generate an input validator", "skill_id": "code_generation"},
+        )
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "unauthorized"}
+
+
 def test_task_endpoint_maps_pr_review_payload(monkeypatch):
     _reset_auth(monkeypatch)
     fake = FakeAndromeda()

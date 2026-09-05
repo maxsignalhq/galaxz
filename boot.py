@@ -1,17 +1,23 @@
 import asyncio
 import logging
+import os
 
 from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.task_log import TaskLog
 from agents.rigel.agent import RigelAgent
 from agents.vega.agent import VegaAgent
 from core.agent_loader import load_yaml_agents
+from core.artifacts.object_storage import object_storage_from_environment
+from core.artifacts.store import ArtifactStore
 from core.pulsar.registry import PulsarRegistry
+from core.goals import PostgresGoalStore
+from core.storage import PostgresArtifactStore, PostgresReviewQueue, PostgresTaskLog
+from core.storage.manage import database_engine, require_current_schema
 
 logger = logging.getLogger(__name__)
 
 
-def boot() -> Andromeda:
+def boot(config_path: str = "config/providers.yaml") -> Andromeda:
     """
     Boot sequence (strict order — do not change):
     1. Instantiate PulsarRegistry (loads existing skills from SQLite)
@@ -23,9 +29,25 @@ def boot() -> Andromeda:
     7. Return the Andromeda instance
     """
     registry = PulsarRegistry()
-    task_log = TaskLog()
-    rigel = RigelAgent(registry)
-    vega = VegaAgent(registry)
+    database_url = os.getenv("GALAXZ_DATABASE_URL")
+    if database_url:
+        engine = database_engine(database_url)
+        try:
+            with engine.connect() as connection:
+                require_current_schema(connection)
+        finally:
+            engine.dispose()
+        shared_engine = database_engine(database_url)
+        task_log = PostgresTaskLog(database_url, engine=shared_engine)
+        review_queue = PostgresReviewQueue(database_url, engine=shared_engine)
+        artifact_store = PostgresArtifactStore(database_url, engine=shared_engine, object_storage=object_storage_from_environment())
+        goal_store = PostgresGoalStore(database_url, engine=shared_engine)
+    else:
+        task_log = TaskLog()
+        review_queue = goal_store = None
+        artifact_store = ArtifactStore(object_storage=object_storage_from_environment())
+    rigel = RigelAgent(registry, config_path=config_path)
+    vega = VegaAgent(registry, config_path=config_path)
     vega.start()
     yaml_agents = load_yaml_agents(registry)
     from orion import OrionService
@@ -44,6 +66,9 @@ def boot() -> Andromeda:
             vega.AGENT_ID: vega,
             **yaml_agents,
         },
+        review_queue=review_queue,
+        artifact_store=artifact_store,
+        goal_store=goal_store,
     )
     andromeda.orion = orion
     return andromeda
