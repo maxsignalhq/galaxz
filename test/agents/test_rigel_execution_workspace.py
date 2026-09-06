@@ -1,6 +1,18 @@
 import subprocess
 
-from agents.rigel.execution import execute_generated_output
+import pytest
+
+from agents.rigel.execution import NetworkPolicy, execute_generated_output
+
+
+def test_network_allowlist_requires_explicit_approval():
+    with pytest.raises(ValueError, match="explicit approval"):
+        NetworkPolicy(mode="allowlist", allowlist=("api.example.com",)).validate()
+
+
+def test_network_deny_all_rejects_allowlist():
+    with pytest.raises(ValueError, match="cannot include"):
+        NetworkPolicy(allowlist=("127.0.0.1",)).validate()
 
 
 def test_no_workspace_root_uses_sandbox(monkeypatch):
