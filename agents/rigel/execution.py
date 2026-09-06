@@ -29,26 +29,26 @@ class ExecutionSandboxUnavailable(RuntimeError):
     pass
 
 
-def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int) -> ExecutionResult:
+def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int, image: str) -> ExecutionResult:
     start = time.monotonic()
-    env = {**os.environ, "HOME": workspace_root}
+    container_name = f"rigel-exec-{uuid4().hex[:12]}"
+    relative_file = Path(file_path).resolve().relative_to(Path(workspace_root).resolve())
     try:
         completed = subprocess.run(
-            [sys.executable, file_path],
+            _docker_workspace_run_command(Path(workspace_root), image, container_name, relative_file),
             capture_output=True,
             text=True,
             timeout=timeout_s,
-            cwd=workspace_root,
-            env=env,
         )
     except subprocess.TimeoutExpired as exc:
+        _cleanup_container(container_name)
         return ExecutionResult(
             exit_code=-1,
             stdout=_coerce_output(exc.stdout),
             stderr=_coerce_output(exc.stderr),
             outcome="timeout",
             duration_ms=int((time.monotonic() - start) * 1000),
-            executed_from="workspace",
+            executed_from="sandbox",
         )
     except Exception as exc:
         return ExecutionResult(
@@ -57,7 +57,7 @@ def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int) -
             stderr=str(exc),
             outcome="error",
             duration_ms=int((time.monotonic() - start) * 1000),
-            executed_from="workspace",
+            executed_from="sandbox",
         )
     return ExecutionResult(
         exit_code=completed.returncode,
@@ -65,7 +65,7 @@ def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int) -
         stderr=completed.stderr or "",
         outcome="pass" if completed.returncode == 0 else "fail",
         duration_ms=int((time.monotonic() - start) * 1000),
-        executed_from="workspace",
+        executed_from="sandbox",
     )
 
 
@@ -81,7 +81,7 @@ def execute_generated_output(
     if workspace_root is not None:
         if file_path is None:
             return None
-        return _execute_in_workspace(file_path, workspace_root, timeout_s)
+        return _execute_in_workspace(file_path, workspace_root, timeout_s, image)
 
     files = _build_execution_files(skill_id, payload, result)
     if files is None:
@@ -181,6 +181,16 @@ def _docker_run_command(
     container_name: str,
 ) -> list[str]:
     workspace_path = str(workspace.resolve())
+    return _docker_workspace_run_command(workspace, image, container_name, Path("runner.py"))
+
+
+def _docker_workspace_run_command(
+    workspace: Path,
+    image: str,
+    container_name: str,
+    script: Path,
+) -> list[str]:
+    workspace_path = str(workspace.resolve())
     return [
         "docker",
         "run",
@@ -203,14 +213,14 @@ def _docker_run_command(
         "--user",
         "65534:65534",
         "--mount",
-        f"type=bind,src={workspace_path},dst=/workspace",
+        f"type=bind,src={workspace_path},dst=/workspace,readonly",
         "--workdir",
         "/workspace",
         "-e",
         "PYTHONDONTWRITEBYTECODE=1",
         image,
         "python",
-        "runner.py",
+        str(Path("/workspace") / script),
     ]
 
 
