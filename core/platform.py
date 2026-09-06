@@ -19,3 +19,7 @@ def distribute_tenants(tenant_ids: list[str], worker_count: int) -> list[list[st
     for index, tenant_id in enumerate(tenant_ids):
         buckets[index % len(buckets)].append(tenant_id)
     return buckets
+
+def hosted_readiness(*, billing: bool, backups: bool, restore_test: bool, monitoring: bool) -> dict:
+    checks = {"billing": billing, "backups": backups, "restore_test": restore_test, "monitoring": monitoring}
+    return {"status": "ready" if all(checks.values()) else "blocked", "checks": checks}
