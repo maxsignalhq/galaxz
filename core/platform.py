@@ -28,3 +28,7 @@ def enforce_quota(usage: int, limit: int) -> dict:
     if limit < 0 or usage < 0:
         raise ValueError("usage and limit must be non-negative")
     return {"allowed": usage < limit, "usage": usage, "limit": limit, "remaining": max(0, limit - usage)}
+
+def deployment_plan(*, tls: bool, health_checks: bool, rollback_version: str | None) -> dict:
+    checks = {"tls": tls, "health_checks": health_checks, "rollback": bool(rollback_version)}
+    return {"status": "ready" if all(checks.values()) else "blocked", "checks": checks, "rollback_version": rollback_version}
