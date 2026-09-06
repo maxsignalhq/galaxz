@@ -37,6 +37,8 @@ the working tree. It is intended to be reviewed before the next GitHub push.
 - GitHub workflow primitives for evidence-linked pull requests, validation
   check runs, signed webhook intake, and idempotent pull-request lifecycle
   reconciliation.
+- GitHub App authentication for installation/repository selection and
+  short-lived in-memory installation tokens with least-privilege permissions.
 - Integration and contract environments for Docker, PostgreSQL migration and
   repository checks, crash recovery, completion publication, and OpenAPI
   regression verification.
@@ -63,8 +65,8 @@ the working tree. It is intended to be reviewed before the next GitHub push.
 
 ### Known limitations before publication
 
-- GitHub App authentication, remote pull-request creation, disposable
-  non-root execution, network/resource policy enforcement, identity/RBAC,
+- Remote pull-request creation, disposable non-root execution,
+  network/resource policy enforcement, identity/RBAC,
   observability, and pilot workflows remain planned Phase 2/3 work.
 - Phase 4 tenant isolation, hosted scale, billing, enterprise SSO, and HA/DR
   launch controls remain explicitly future-scope.

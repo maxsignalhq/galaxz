@@ -92,6 +92,17 @@
             "title": "Head Sha",
             "type": "string"
           },
+          "installation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installation Id"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -150,6 +161,17 @@
           "head": {
             "title": "Head",
             "type": "string"
+          },
+          "installation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installation Id"
           },
           "owner": {
             "title": "Owner",
@@ -1093,6 +1115,59 @@
           }
         },
         "summary": "Create Github Check Run"
+      }
+    },
+    "/github/installations": {
+      "get": {
+        "operationId": "list_github_installations_github_installations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Github Installations"
+      }
+    },
+    "/github/installations/{installation_id}/repositories": {
+      "get": {
+        "operationId": "list_github_installation_repositories_github_installations__installation_id__repositories_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "installation_id",
+            "required": true,
+            "schema": {
+              "title": "Installation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Github Installation Repositories"
       }
     },
     "/github/pull-request": {
