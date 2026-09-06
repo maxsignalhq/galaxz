@@ -6,6 +6,7 @@ import sys
 import tempfile
 import textwrap
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -16,6 +17,19 @@ from pydantic import BaseModel, Field
 DEFAULT_EXECUTION_IMAGE = "galaxz:latest"
 
 
+@dataclass(frozen=True)
+class NetworkPolicy:
+    mode: Literal["deny-all", "allowlist"] = "deny-all"
+    allowlist: tuple[str, ...] = ()
+    approved: bool = False
+
+    def validate(self) -> None:
+        if self.mode == "deny-all" and self.allowlist:
+            raise ValueError("deny-all network policy cannot include an allowlist")
+        if self.mode == "allowlist" and (not self.allowlist or not self.approved):
+            raise ValueError("network allowlists require explicit approval")
+
+
 class ExecutionResult(BaseModel):
     exit_code: int
     stdout: str
@@ -23,19 +37,26 @@ class ExecutionResult(BaseModel):
     outcome: Literal["pass", "fail", "timeout", "error"]
     duration_ms: int = Field(ge=0)
     executed_from: Literal["workspace", "sandbox"] = "sandbox"
+    network_policy: str = "deny-all"
 
 
 class ExecutionSandboxUnavailable(RuntimeError):
     pass
 
 
-def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int, image: str) -> ExecutionResult:
+def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int, image: str, network_policy: NetworkPolicy) -> ExecutionResult:
     start = time.monotonic()
     container_name = f"rigel-exec-{uuid4().hex[:12]}"
-    relative_file = Path(file_path).resolve().relative_to(Path(workspace_root).resolve())
+    try:
+        relative_file = Path(file_path).resolve().relative_to(Path(workspace_root).resolve())
+    except ValueError:
+        return ExecutionResult(
+            exit_code=-1, stdout="", stderr="execution file escapes workspace", outcome="error",
+            duration_ms=0, executed_from="sandbox", network_policy=network_policy.mode,
+        )
     try:
         completed = subprocess.run(
-            _docker_workspace_run_command(Path(workspace_root), image, container_name, relative_file),
+            _docker_workspace_run_command(Path(workspace_root), image, container_name, relative_file, network_policy),
             capture_output=True,
             text=True,
             timeout=timeout_s,
@@ -49,6 +70,7 @@ def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int, i
             outcome="timeout",
             duration_ms=int((time.monotonic() - start) * 1000),
             executed_from="sandbox",
+            network_policy=network_policy.mode,
         )
     except Exception as exc:
         return ExecutionResult(
@@ -58,6 +80,7 @@ def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int, i
             outcome="error",
             duration_ms=int((time.monotonic() - start) * 1000),
             executed_from="sandbox",
+            network_policy=network_policy.mode,
         )
     return ExecutionResult(
         exit_code=completed.returncode,
@@ -66,6 +89,7 @@ def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int, i
         outcome="pass" if completed.returncode == 0 else "fail",
         duration_ms=int((time.monotonic() - start) * 1000),
         executed_from="sandbox",
+        network_policy=network_policy.mode,
     )
 
 
@@ -77,11 +101,14 @@ def execute_generated_output(
     image: str = DEFAULT_EXECUTION_IMAGE,
     workspace_root: str | None = None,
     file_path: str | None = None,
+    network_policy: NetworkPolicy | None = None,
 ) -> ExecutionResult | None:
+    network_policy = network_policy or NetworkPolicy()
+    network_policy.validate()
     if workspace_root is not None:
         if file_path is None:
             return None
-        return _execute_in_workspace(file_path, workspace_root, timeout_s, image)
+        return _execute_in_workspace(file_path, workspace_root, timeout_s, image, network_policy)
 
     files = _build_execution_files(skill_id, payload, result)
     if files is None:
@@ -103,6 +130,7 @@ def execute_generated_output(
                 workspace=workspace,
                 image=image,
                 container_name=container_name,
+                network_policy=network_policy,
             )
             completed = subprocess.run(
                 command,
@@ -119,6 +147,7 @@ def execute_generated_output(
             outcome="timeout",
             duration_ms=int((time.monotonic() - start) * 1000),
             executed_from="sandbox",
+            network_policy=network_policy.mode,
         )
     except (FileNotFoundError, PermissionError) as exc:
         raise ExecutionSandboxUnavailable(str(exc)) from exc
@@ -132,6 +161,7 @@ def execute_generated_output(
             outcome="error",
             duration_ms=int((time.monotonic() - start) * 1000),
             executed_from="sandbox",
+            network_policy=network_policy.mode,
         )
 
     stderr = completed.stderr or ""
@@ -145,6 +175,7 @@ def execute_generated_output(
         outcome="pass" if completed.returncode == 0 else "fail",
         duration_ms=int((time.monotonic() - start) * 1000),
         executed_from="sandbox",
+        network_policy=network_policy.mode,
     )
 
 
@@ -179,9 +210,10 @@ def _docker_run_command(
     workspace: Path,
     image: str,
     container_name: str,
+    network_policy: NetworkPolicy | None = None,
 ) -> list[str]:
     workspace_path = str(workspace.resolve())
-    return _docker_workspace_run_command(workspace, image, container_name, Path("runner.py"))
+    return _docker_workspace_run_command(workspace, image, container_name, Path("runner.py"), network_policy or NetworkPolicy())
 
 
 def _docker_workspace_run_command(
@@ -189,7 +221,9 @@ def _docker_workspace_run_command(
     image: str,
     container_name: str,
     script: Path,
+    network_policy: NetworkPolicy,
 ) -> list[str]:
+    network_policy.validate()
     workspace_path = str(workspace.resolve())
     return [
         "docker",
