@@ -37,3 +37,7 @@ def metered_charge(units: int, unit_price: float, plan_limit: int | None = None)
     if units < 0 or unit_price < 0:
         raise ValueError("meter inputs must be non-negative")
     return {"units": units, "charge": round(units * unit_price, 8), "within_plan": plan_limit is None or units <= plan_limit}
+
+def certify_agent(*, tests: bool, security: bool, permissions: bool) -> dict:
+    checks = {"tests": tests, "security": security, "permissions": permissions}
+    return {"certified": all(checks.values()), "checks": checks}
