@@ -293,6 +293,18 @@
           "retry_policy": {
             "$ref": "#/components/schemas/RetryPolicy"
           },
+          "reviewer_override": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Override"
+          },
           "route_mode": {
             "anyOf": [
               {
@@ -436,6 +448,18 @@
       },
       "TaskRequest": {
         "properties": {
+          "reviewer_override": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Override"
+          },
           "route_mode": {
             "anyOf": [
               {
