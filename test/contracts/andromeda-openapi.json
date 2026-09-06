@@ -86,6 +86,111 @@
         "title": "ConfigUpdateRequest",
         "type": "object"
       },
+      "GitHubCheckRequest": {
+        "properties": {
+          "head_sha": {
+            "title": "Head Sha",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "repository": {
+            "title": "Repository",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repository",
+          "head_sha",
+          "name",
+          "passed",
+          "summary"
+        ],
+        "title": "GitHubCheckRequest",
+        "type": "object"
+      },
+      "GitHubPullRequestRequest": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "base": {
+            "default": "main",
+            "title": "Base",
+            "type": "string"
+          },
+          "draft": {
+            "default": true,
+            "title": "Draft",
+            "type": "boolean"
+          },
+          "goal_id": {
+            "title": "Goal Id",
+            "type": "string"
+          },
+          "head": {
+            "title": "Head",
+            "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "repository": {
+            "title": "Repository",
+            "type": "string"
+          },
+          "review_decision": {
+            "title": "Review Decision",
+            "type": "string"
+          },
+          "task_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Task Ids",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "validation": {
+            "title": "Validation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repository",
+          "head",
+          "title",
+          "goal_id",
+          "validation",
+          "review_decision"
+        ],
+        "title": "GitHubPullRequestRequest",
+        "type": "object"
+      },
       "GoalControlRequest": {
         "properties": {
           "reason": {
@@ -952,6 +1057,94 @@
           }
         },
         "summary": "Forge Skill"
+      }
+    },
+    "/github/check-run": {
+      "post": {
+        "operationId": "create_github_check_run_github_check_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Github Check Run"
+      }
+    },
+    "/github/pull-request": {
+      "post": {
+        "operationId": "create_github_pull_request_github_pull_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubPullRequestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Github Pull Request"
+      }
+    },
+    "/github/webhook": {
+      "post": {
+        "operationId": "github_webhook_github_webhook_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Github Webhook"
       }
     },
     "/goals": {

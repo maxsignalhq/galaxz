@@ -34,6 +34,9 @@ the working tree. It is intended to be reviewed before the next GitHub push.
 - Per-goal Git worktrees and branches rooted at the pinned base revision,
   guarded cleanup, workspace provenance metadata, canonical binary-safe diffs,
   and provenance commits.
+- GitHub workflow primitives for evidence-linked pull requests, validation
+  check runs, signed webhook intake, and idempotent pull-request lifecycle
+  reconciliation.
 - Integration and contract environments for Docker, PostgreSQL migration and
   repository checks, crash recovery, completion publication, and OpenAPI
   regression verification.
@@ -48,6 +51,8 @@ the working tree. It is intended to be reviewed before the next GitHub push.
 - Prism task and goal views now expose durable execution and artifact evidence.
 - The OpenAPI regression contract and production-readiness documentation now
   reflect the expanded API and operational model.
+- GitHub workflow endpoints now fail closed when integration credentials are not
+  configured and verify webhook signatures before processing deliveries.
 
 ### Verification
 

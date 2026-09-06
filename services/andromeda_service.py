@@ -1,4 +1,6 @@
 import json
+import hashlib
+import hmac
 import logging
 import os
 import re
@@ -11,7 +13,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -29,6 +31,7 @@ from core.jobs import InvalidJobState
 from core.jobs import PostgresJobRepository, SqliteJobRepository
 from core.goals import DurableGoalCoordinator
 from core.repositories import RepositoryAccessError, RepositoryStore
+from core.github import GitHubClient, PullRequestEvidence, WebhookStore
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
 from core.storage.manage import validate_runtime_database_configuration
@@ -63,6 +66,17 @@ _candidate_client: CandidateClient = None
 _start_time: float = 0.0
 _job_repository: SqliteJobRepository | PostgresJobRepository | None = None
 _repository_store = RepositoryStore()
+
+
+def _github_client() -> GitHubClient:
+    token = os.getenv("GALAXZ_GITHUB_TOKEN")
+    if not token:
+        raise HTTPException(status_code=503, detail="GitHub integration is not configured")
+    return GitHubClient(token, base_url=os.getenv("GALAXZ_GITHUB_API_URL", "https://api.github.com"))
+
+
+def _github_webhooks() -> WebhookStore:
+    return WebhookStore(os.getenv("GITHUB_WEBHOOK_DB_PATH", "data/github-webhooks.db"))
 
 
 def _jobs() -> SqliteJobRepository | PostgresJobRepository:
@@ -165,6 +179,29 @@ class RepositoryRequest(BaseModel):
 
 class GoalControlRequest(BaseModel):
     reason: str | None = None
+
+
+class GitHubPullRequestRequest(BaseModel):
+    owner: str
+    repository: str
+    head: str
+    base: str = "main"
+    title: str
+    goal_id: str
+    task_ids: list[str] = Field(default_factory=list)
+    artifacts: list[str] = Field(default_factory=list)
+    validation: str
+    review_decision: str
+    draft: bool = True
+
+
+class GitHubCheckRequest(BaseModel):
+    owner: str
+    repository: str
+    head_sha: str
+    name: str
+    passed: bool
+    summary: str
 
 
 _SHORT_SKILL_ALIASES = {
@@ -841,6 +878,47 @@ def get_repository(repository_id: str):
         return _repository_store.get(repository_id).__dict__
     except RepositoryAccessError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/github/pull-request")
+def create_github_pull_request(req: GitHubPullRequestRequest):
+    evidence = PullRequestEvidence(
+        goal_id=req.goal_id, task_ids=req.task_ids, artifacts=req.artifacts,
+        validation=req.validation, review_decision=req.review_decision,
+    )
+    return _github_client().create_pull_request(
+        req.owner, req.repository, head=req.head, base=req.base, title=req.title,
+        evidence=evidence, draft=req.draft,
+    )
+
+
+@app.post("/github/check-run")
+def create_github_check_run(req: GitHubCheckRequest):
+    return _github_client().create_check_run(
+        req.owner, req.repository, head_sha=req.head_sha, name=req.name,
+        passed=req.passed, summary=req.summary,
+    )
+
+
+@app.post("/github/webhook")
+async def github_webhook(request: Request):
+    secret = os.getenv("GALAXZ_GITHUB_WEBHOOK_SECRET")
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if not secret or not signature.startswith("sha256="):
+        raise HTTPException(status_code=401, detail="invalid webhook signature")
+    body = await request.body()
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise HTTPException(status_code=401, detail="invalid webhook signature")
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="invalid webhook JSON") from exc
+    delivery_id = request.headers.get("X-GitHub-Delivery")
+    event = request.headers.get("X-GitHub-Event", "unknown")
+    if not delivery_id:
+        raise HTTPException(status_code=400, detail="missing webhook delivery id")
+    return _github_webhooks().reconcile(delivery_id, event, payload)
 
 
 @app.post("/goals/{goal_id}/resume", status_code=202)
