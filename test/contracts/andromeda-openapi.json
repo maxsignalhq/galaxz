@@ -1689,6 +1689,23 @@
         "summary": "Cancel Job"
       }
     },
+    "/live": {
+      "get": {
+        "description": "Fast process probe; intentionally does not call dependencies.",
+        "operationId": "liveness_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness"
+      }
+    },
     "/orion/analytics": {
       "get": {
         "operationId": "get_orion_analytics_orion_analytics_get",
@@ -1773,6 +1790,23 @@
           }
         },
         "summary": "Run Orion Training"
+      }
+    },
+    "/ready": {
+      "get": {
+        "description": "Dependency-aware traffic probe.",
+        "operationId": "readiness_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Readiness"
       }
     },
     "/repositories": {

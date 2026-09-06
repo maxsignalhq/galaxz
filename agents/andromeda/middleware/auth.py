@@ -9,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 _EXEMPT_ROUTES = {
     ("GET", "/health"),
+    ("GET", "/live"),
+    ("GET", "/ready"),
     ("GET", "/status"),
     ("GET", "/agents"),
     ("GET", "/tasks/recent"),

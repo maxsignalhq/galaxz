@@ -1493,6 +1493,21 @@ def health():
     }
 
 
+@app.get("/live")
+def liveness():
+    """Fast process probe; intentionally does not call dependencies."""
+    return {"status": "alive", "service": "andromeda"}
+
+
+@app.get("/ready")
+def readiness():
+    """Dependency-aware traffic probe."""
+    report = health()
+    if report["status"] != "healthy":
+        raise HTTPException(status_code=503, detail=report)
+    return {"status": "ready", "service": "andromeda", "checks": report["checks"]}
+
+
 def _orion_status() -> dict:
     orion = getattr(_andromeda, "orion", None)
     config = getattr(orion, "_cfg", None)
