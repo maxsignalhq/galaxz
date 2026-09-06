@@ -23,3 +23,8 @@ def distribute_tenants(tenant_ids: list[str], worker_count: int) -> list[list[st
 def hosted_readiness(*, billing: bool, backups: bool, restore_test: bool, monitoring: bool) -> dict:
     checks = {"billing": billing, "backups": backups, "restore_test": restore_test, "monitoring": monitoring}
     return {"status": "ready" if all(checks.values()) else "blocked", "checks": checks}
+
+def enforce_quota(usage: int, limit: int) -> dict:
+    if limit < 0 or usage < 0:
+        raise ValueError("usage and limit must be non-negative")
+    return {"allowed": usage < limit, "usage": usage, "limit": limit, "remaining": max(0, limit - usage)}
