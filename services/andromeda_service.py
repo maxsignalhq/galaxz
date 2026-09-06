@@ -31,7 +31,7 @@ from core.jobs import InvalidJobState
 from core.jobs import PostgresJobRepository, SqliteJobRepository
 from core.goals import DurableGoalCoordinator
 from core.repositories import RepositoryAccessError, RepositoryStore
-from core.github import GitHubClient, PullRequestEvidence, WebhookStore
+from core.github import GitHubAppClient, GitHubClient, PullRequestEvidence, WebhookStore
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
 from core.storage.manage import validate_runtime_database_configuration
@@ -68,7 +68,20 @@ _job_repository: SqliteJobRepository | PostgresJobRepository | None = None
 _repository_store = RepositoryStore()
 
 
-def _github_client() -> GitHubClient:
+def _github_app() -> GitHubAppClient:
+    app_id = os.getenv("GALAXZ_GITHUB_APP_ID")
+    private_key = os.getenv("GALAXZ_GITHUB_APP_PRIVATE_KEY")
+    if not app_id or not private_key:
+        raise HTTPException(status_code=503, detail="GitHub App integration is not configured")
+    return GitHubAppClient(app_id, private_key, base_url=os.getenv("GALAXZ_GITHUB_API_URL", "https://api.github.com"))
+
+
+def _github_client(installation_id: int | None = None) -> GitHubClient:
+    if installation_id is None and os.getenv("GALAXZ_GITHUB_APP_ID") and os.getenv("GALAXZ_GITHUB_APP_PRIVATE_KEY"):
+        installation_id = int(os.getenv("GALAXZ_GITHUB_INSTALLATION_ID", "0")) or None
+    if installation_id is not None:
+        token = _github_app().installation_token(installation_id)
+        return GitHubClient(token, base_url=os.getenv("GALAXZ_GITHUB_API_URL", "https://api.github.com"))
     token = os.getenv("GALAXZ_GITHUB_TOKEN")
     if not token:
         raise HTTPException(status_code=503, detail="GitHub integration is not configured")
@@ -193,6 +206,7 @@ class GitHubPullRequestRequest(BaseModel):
     validation: str
     review_decision: str
     draft: bool = True
+    installation_id: Optional[int] = None
 
 
 class GitHubCheckRequest(BaseModel):
@@ -202,6 +216,7 @@ class GitHubCheckRequest(BaseModel):
     name: str
     passed: bool
     summary: str
+    installation_id: Optional[int] = None
 
 
 _SHORT_SKILL_ALIASES = {
@@ -886,7 +901,7 @@ def create_github_pull_request(req: GitHubPullRequestRequest):
         goal_id=req.goal_id, task_ids=req.task_ids, artifacts=req.artifacts,
         validation=req.validation, review_decision=req.review_decision,
     )
-    return _github_client().create_pull_request(
+    return _github_client(req.installation_id).create_pull_request(
         req.owner, req.repository, head=req.head, base=req.base, title=req.title,
         evidence=evidence, draft=req.draft,
     )
@@ -894,10 +909,20 @@ def create_github_pull_request(req: GitHubPullRequestRequest):
 
 @app.post("/github/check-run")
 def create_github_check_run(req: GitHubCheckRequest):
-    return _github_client().create_check_run(
+    return _github_client(req.installation_id).create_check_run(
         req.owner, req.repository, head_sha=req.head_sha, name=req.name,
         passed=req.passed, summary=req.summary,
     )
+
+
+@app.get("/github/installations")
+def list_github_installations():
+    return _github_app().list_installations()
+
+
+@app.get("/github/installations/{installation_id}/repositories")
+def list_github_installation_repositories(installation_id: int):
+    return _github_app().list_repositories(installation_id)
 
 
 @app.post("/github/webhook")
