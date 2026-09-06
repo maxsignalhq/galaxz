@@ -6,6 +6,7 @@ import signal
 import socket
 
 from boot import boot
+from core.observability import configure_logging
 from core.contracts import TaskContract
 from core.jobs import CancellationToken
 from core.jobs import DurableWorker
@@ -26,10 +27,7 @@ def _positive_float(name: str, default: float) -> float:
 
 def main() -> None:
     validate_runtime_database_configuration()
-    logging.basicConfig(
-        level=os.getenv("LOG_LEVEL", "INFO"),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    configure_logging()
     database = os.getenv("GALAXZ_DATABASE_URL") or os.getenv("JOB_DB_PATH", "data/jobs.db")
     repository = PostgresJobRepository(database) if database.startswith(("postgres://", "postgresql://", "postgresql+")) else SqliteJobRepository(database)
     andromeda = boot(os.getenv("GALAXZ_CONFIG_PATH", "config/providers.yaml"))
