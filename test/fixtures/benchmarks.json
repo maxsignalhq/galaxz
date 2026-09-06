@@ -1,0 +1,7 @@
+[
+  {"name": "python-codegen", "language": "python", "base_commit": "0000000000000000000000000000000000000001", "workflow": "code-generation", "acceptance": ["module imports", "behavioral tests pass"], "hidden_tests": ["test_python_behavior"]},
+  {"name": "python-bugfix", "language": "python", "base_commit": "0000000000000000000000000000000000000002", "workflow": "bug-fix", "acceptance": ["regression is fixed", "existing tests pass"], "hidden_tests": ["test_regression"]},
+  {"name": "python-refactor", "language": "python", "base_commit": "0000000000000000000000000000000000000003", "workflow": "refactor", "acceptance": ["public behavior unchanged", "lint passes"], "hidden_tests": ["test_compatibility"]},
+  {"name": "python-tests", "language": "python", "base_commit": "0000000000000000000000000000000000000004", "workflow": "tests", "acceptance": ["tests cover edge cases", "tests are deterministic"], "hidden_tests": ["test_coverage_quality"]},
+  {"name": "typescript-multistep", "language": "typescript", "base_commit": "0000000000000000000000000000000000000005", "workflow": "multi-step", "acceptance": ["build passes", "workflow output matches contract"], "hidden_tests": ["test_typescript_contract"]}
+]
