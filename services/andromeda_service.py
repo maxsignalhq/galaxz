@@ -32,6 +32,7 @@ from core.jobs import PostgresJobRepository, SqliteJobRepository
 from core.goals import DurableGoalCoordinator
 from core.repositories import RepositoryAccessError, RepositoryStore
 from core.github import GitHubAppClient, GitHubClient, PullRequestEvidence, WebhookStore
+from core.security import ArtifactScanOverride, scan_artifacts
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
 from core.storage.manage import validate_runtime_database_configuration
@@ -146,6 +147,7 @@ class TaskRequest(BaseModel):
     skill_id: str
     route_mode: Optional[str] = "auto"
     session_context: list[TaskSessionContextItem] = Field(default_factory=list)
+    reviewer_override: dict | None = None
 
 
 class JobRequest(TaskRequest):
@@ -581,6 +583,17 @@ def post_task(req: TaskRequest):
     file_results: list[dict] = []
     ran_file_write = False
 
+    override = None
+    if req.reviewer_override:
+        override = ArtifactScanOverride(
+            reviewer=str(req.reviewer_override.get("reviewer", "")),
+            decision=str(req.reviewer_override.get("decision", "")),
+            findings=tuple(req.reviewer_override.get("findings", ())),
+        )
+    artifact_scan = scan_artifacts(state.get("artifacts", []), override=override)
+    if artifact_scan.status in {"blocked", "escalate"}:
+        raise HTTPException(status_code=422, detail={"error": "artifact safety review required", "scan": artifact_scan.as_dict()})
+
     if workspace_path and state.get("writable") and state.get("artifacts"):
         ran_file_write = True
         try:
@@ -605,6 +618,7 @@ def post_task(req: TaskRequest):
         "confidence_breakdown": state.get("confidence_breakdown") or {},
         "gaps": state.get("gaps") or [],
         "summary": state.get("summary") or "",
+        "artifact_scan": artifact_scan.as_dict(),
     }
 
 
