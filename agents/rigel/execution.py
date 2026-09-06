@@ -13,6 +13,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from core.security.execution_policy import ExecutionPolicy
+
 
 DEFAULT_EXECUTION_IMAGE = "galaxz:latest"
 
@@ -224,6 +226,9 @@ def _docker_workspace_run_command(
     network_policy: NetworkPolicy,
 ) -> list[str]:
     network_policy.validate()
+    policy = ExecutionPolicy()
+    command = ["python", str(Path("/workspace") / script)]
+    policy.validate_command(command)
     workspace_path = str(workspace.resolve())
     return [
         "docker",
@@ -239,11 +244,11 @@ def _docker_workspace_run_command(
         "--security-opt",
         "no-new-privileges",
         "--pids-limit",
-        "64",
+        str(policy.limits.pids),
         "--memory",
-        "256m",
+        policy.limits.memory,
         "--cpus",
-        "0.5",
+        str(policy.limits.cpu),
         "--user",
         "65534:65534",
         "--mount",
@@ -253,8 +258,7 @@ def _docker_workspace_run_command(
         "-e",
         "PYTHONDONTWRITEBYTECODE=1",
         image,
-        "python",
-        str(Path("/workspace") / script),
+        *command,
     ]
 
 
