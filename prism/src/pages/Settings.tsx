@@ -16,6 +16,7 @@ type LLMConfig = {
   model:       string;
   api_key_set: boolean;
   base_url:    string;
+  workspace_path?: string;
 };
 
 type StatusData = {
@@ -486,6 +487,19 @@ function GeneralPanel({
             />
           </div>
           <div className="form-field">
+            <label className="form-label">Workspace folder</label>
+            <input
+              type="text"
+              className="form-input"
+              value={general.workspacePath ?? ''}
+              onChange={(e) => setGeneral('workspacePath', e.target.value)}
+              placeholder="/Users/you/Projects/my-workspace"
+            />
+            <span className="form-hint">
+              The folder must be inside GALAXZ_WORKSPACE_HOST_PATH for the running Docker stack.
+            </span>
+          </div>
+          <div className="form-field">
             <label className="form-label">Default confidence threshold</label>
             <input
               type="text"
@@ -710,7 +724,7 @@ export function Settings() {
 
   // General
   const [general, setGeneralState] = useState<Record<string, string>>(() => ({
-    workspaceName: '',
+    workspaceName: '', workspacePath: '',
     confidenceThreshold: '0.80',
     logLevel: 'DEBUG',
     timezone: 'UTC',
@@ -725,6 +739,7 @@ export function Settings() {
       if (cfg) {
         setConfig(cfg);
         setConfigOrig(cfg);
+        setGeneralState((prev) => ({ ...prev, workspacePath: cfg.workspace_path ?? '' }));
       }
       if (status) setStatusData(status);
     });
@@ -765,6 +780,14 @@ export function Settings() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         setConfigOrig(config);
         setApiKey('');
+      } else if (panel === 'general') {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workspace_path: general.workspacePath ?? '' }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        saveToLocal();
       } else {
         saveToLocal();
       }
@@ -782,7 +805,7 @@ export function Settings() {
     }
     const saved = loadLocal();
     if (panel === 'budget')  { setBudgetState({ tokens: '', costCap: '', concurrent: '', ...saved.budget }); }
-    if (panel === 'general') { setGeneralState({ workspaceName: '', confidenceThreshold: '0.80', logLevel: 'DEBUG', timezone: 'UTC', ...saved.general }); }
+    if (panel === 'general') { setGeneralState({ workspaceName: '', workspacePath: '', confidenceThreshold: '0.80', logLevel: 'DEBUG', timezone: 'UTC', ...saved.general }); }
   }
 
   const readOnlyPanel = panel === 'members' || panel === 'api-keys' || panel === 'plan';

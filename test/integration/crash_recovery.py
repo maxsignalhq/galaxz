@@ -11,7 +11,7 @@ from uuid import uuid4
 
 BASE_URL = "http://127.0.0.1:18001"
 ROOT = Path(__file__).parents[2]
-COMPOSE = ["docker", "compose", "-f", "docker-compose.integration.yml"]
+COMPOSE = ["docker", "compose", "--env-file", "/dev/null", "-p", "galaxz-integration", "-f", "docker-compose.integration.yml"]
 
 
 def read_json(path: str, payload: dict | None = None) -> dict:

@@ -174,7 +174,6 @@ class Andromeda:
         self.goal_planner = GoalPlanner(registry)
         self.goal_runner = GoalRunner(self, self.goal_store)
         self.routing_weights = RoutingWeightsLoader(str(ROUTING_WEIGHTS_PATH))
-        self._workspace_config = load_workspace_config()
         self._routing_weights_stop = threading.Event()
         self._agents = agents or {
             "rigel": RigelAgent(registry),
@@ -278,6 +277,32 @@ class Andromeda:
                 }
             result = agent.run(skill_id, payload, context)
 
+            # A generated program is not complete until the exact workspace
+            # artifact has been executed successfully.  Previously an
+            # unavailable Docker sandbox was treated as a warning and the
+            # LLM's self-confidence could still produce a false completion.
+            if result.get("failure_reason") == "execution_sandbox_unavailable" or (
+                skill_id == "rigel.skill.code_generation"
+                and result.get("writable")
+                and result.get("written_artifacts")
+                and result.get("execution_result") is None
+            ):
+                return {
+                    "result": result,
+                    "artifacts": result.get("artifacts", []),
+                    "writable": result.get("writable", False),
+                    "summary": result.get("summary", ""),
+                    "confidence": 0.0,
+                    "confidence_breakdown": result.get("confidence_breakdown", {}),
+                    "gaps": [
+                        "Execution could not be verified in the configured sandbox."
+                    ],
+                    "execution_result": result.get("execution_result"),
+                    "externally_calibrated": False,
+                    "status": "failed",
+                    "failure_reason": "execution_sandbox_unavailable",
+                }
+
             return {
                 "result": result.get("result", result),
                 "artifacts": result.get("artifacts", []),
@@ -319,7 +344,8 @@ class Andromeda:
                 confidence_threshold=0.65,
             )
 
-        ws = self._workspace_config
+        # API and worker processes see settings changes on the next task.
+        ws = load_workspace_config()
         if ws.enabled:
             task = task.model_copy(update={"workspace_root": ws.workspace_root})
             context_update = {"workspace_root": ws.workspace_root}

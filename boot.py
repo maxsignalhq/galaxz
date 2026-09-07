@@ -45,7 +45,10 @@ def boot(config_path: str = "config/providers.yaml") -> Andromeda:
     else:
         task_log = TaskLog()
         review_queue = goal_store = None
-        artifact_store = ArtifactStore(object_storage=object_storage_from_environment())
+        artifact_store = ArtifactStore(
+            db_path=os.getenv("ARTIFACT_DB_PATH", "data/artifacts.db"),
+            object_storage=object_storage_from_environment(),
+        )
     rigel = RigelAgent(registry, config_path=config_path)
     vega = VegaAgent(registry, config_path=config_path)
     vega.start()

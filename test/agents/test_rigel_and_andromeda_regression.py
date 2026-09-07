@@ -3,6 +3,7 @@ import pytest
 from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.task_log import TaskLog
 from agents.rigel.agent import RigelAgent
+from agents.rigel.config import RigelConfig
 from core.artifacts.store import ArtifactStore
 from core.contracts import SkillDefinition, SkillManifest
 from core.pulsar.registry import PulsarRegistry
@@ -66,7 +67,8 @@ def test_rigel_skill_contracts_are_stable(
     payload,
     required_key,
 ):
-    agent = RigelAgent(temp_registry)
+    # Contract checks are independent of a developer's Docker availability.
+    agent = RigelAgent(temp_registry, rigel_config=RigelConfig(execution_calibration_enabled=False))
     agent.llm = deterministic_rigel_llm
 
     result = agent.run(skill_id, payload)

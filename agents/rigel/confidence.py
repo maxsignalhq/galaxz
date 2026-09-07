@@ -32,7 +32,7 @@ def _load_weights() -> dict:
 def _structural_check(skill_id: str, result: dict) -> float:
     checks = {
         "rigel.skill.code_generation": lambda r: [
-            isinstance(r.get("code"), str) and len(r.get("code", "")) > 50,
+            isinstance(r.get("code"), str) and bool(r.get("code", "").strip()),
             "code" in r,
         ],
         "rigel.skill.pr_review": lambda r: [
@@ -66,13 +66,16 @@ def _structural_check(skill_id: str, result: dict) -> float:
 
 def _self_critique(skill_id: str, payload: dict, result: dict, llm_client, parse_error_fallback: float = 0.75) -> dict:
     try:
-        result_summary = json.dumps({k: v for k, v in result.items() if k != "code"})
+        review_result = dict(result)
+        if isinstance(review_result.get("code"), str):
+            review_result["code"] = review_result["code"][:4000]
+        result_summary = json.dumps(review_result)
     except Exception:
         result_summary = str(result)[:200]
 
     prompt = (
         f"Original task: {json.dumps(payload)}\n\n"
-        f"Output produced (non-code fields): {result_summary}\n\n"
+        f"Output produced (code limited to 4000 characters): {result_summary}\n\n"
         "Rate whether this output fully satisfies the task.\n"
         "You MUST respond with ONLY this JSON object and nothing else — no explanation, no markdown:\n"
         '{"score": 0.85, "gaps": []}'
