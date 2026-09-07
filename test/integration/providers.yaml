@@ -1,0 +1,5 @@
+llm:
+  provider: anthropic
+  model: test/test-model
+  base_url: http://llm-stub:8000
+  api_key: integration-placeholder

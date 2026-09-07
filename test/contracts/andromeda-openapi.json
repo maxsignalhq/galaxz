@@ -81,6 +81,11 @@
             "default": "",
             "title": "Model",
             "type": "string"
+          },
+          "workspace_path": {
+            "default": "",
+            "title": "Workspace Path",
+            "type": "string"
           }
         },
         "title": "ConfigUpdateRequest",

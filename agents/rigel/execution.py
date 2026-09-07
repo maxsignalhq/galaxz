@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 import tempfile
 import textwrap
 import time
@@ -74,6 +73,10 @@ def _execute_in_workspace(file_path: str, workspace_root: str, timeout_s: int, i
             executed_from="sandbox",
             network_policy=network_policy.mode,
         )
+    except (FileNotFoundError, PermissionError) as exc:
+        raise ExecutionSandboxUnavailable(str(exc)) from exc
+    except OSError as exc:
+        raise ExecutionSandboxUnavailable(str(exc)) from exc
     except Exception as exc:
         return ExecutionResult(
             exit_code=-1,

@@ -7,12 +7,17 @@ import yaml
 
 from agents.rigel.confidence import score_confidence
 from agents.rigel.config import RigelConfig
-from agents.rigel.execution import ExecutionSandboxUnavailable, execute_generated_output
+from agents.rigel.execution import (
+    ExecutionResult,
+    ExecutionSandboxUnavailable,
+    execute_generated_output,
+)
 from agents.rigel.skills import SKILL_REGISTRY
 from core.aether.client import get_aether_client
 from core.contracts import RefineryFeedbackEvent, SkillDefinition, SkillManifest
 from core.llm.provider import ProviderConfig, call_llm, load_provider_config
 from core.pulsar.registry import PulsarRegistry
+from core.security.artifact_scan import require_safe_artifacts
 from workspace.file_writer import FileWriter
 
 _RIGEL_YAML = Path("config/rigel.yaml")
@@ -217,12 +222,23 @@ class RigelAgent:
         skill_name = skill_id.split(".")[-1]
         normalized = _normalize_skill_output(skill_name, raw_result)
 
+        # Check the actual output names before any filesystem or execution effect.
+        if context and context.get("output_path") and len(normalized["artifacts"]) == 1:
+            normalized["artifacts"][0]["filename"] = context["output_path"]
+        require_safe_artifacts(normalized["artifacts"])
+
         workspace_root = context.get("workspace_root") if context else None
         written_artifacts = []
         if workspace_root and normalized["writable"]:
             writer = FileWriter(workspace_root)
             for artifact in normalized["artifacts"]:
-                if len(normalized["artifacts"]) == 1:
+                if skill_name == "code_generation":
+                    # Code generation has a stable contract.  Do not derive a
+                    # filename from the context-enriched prompt; that caused
+                    # files such as request_part_existing_task_ui_session_co.py
+                    # to be created from Task UI history.
+                    filename = context.get("output_path") or artifact["filename"]
+                elif len(normalized["artifacts"]) == 1:
                     filename = context.get("output_path") or writer.infer_filename(
                         _task_description(skill_id, payload), skill_id.split(".")[-1]
                     )
@@ -232,7 +248,11 @@ class RigelAgent:
                 written_artifacts.append(wa.model_dump(mode="python"))
 
         execution_result = None
+        sandbox_unavailable = False
         externally_calibrated = False
+        # Execution evidence is returned in the task result only.  Never turn
+        # stdout/stderr into an artifact: workspace writes are source artifacts
+        # exclusively, so this remains safe for multi-file architectures.
         if self.config.execution_calibration_enabled:
             try:
                 file_path = written_artifacts[0]["absolute_path"] if written_artifacts else None
@@ -248,6 +268,11 @@ class RigelAgent:
                 externally_calibrated = execution_result is not None
             except ExecutionSandboxUnavailable as exc:
                 logger.warning("Rigel execution calibration unavailable: %s", exc)
+                sandbox_unavailable = True
+                execution_result = ExecutionResult(
+                    exit_code=-1, stdout="", stderr="Execution sandbox unavailable",
+                    outcome="error", duration_ms=0,
+                )
 
         confidence_data = score_confidence(
             skill_id,
@@ -283,6 +308,7 @@ class RigelAgent:
             **({"skill_confidence": skill_confidence} if skill_confidence is not None else {}),
             "executed_from": execution_result.executed_from if execution_result is not None else None,
             "written_artifacts": written_artifacts,
+            **({"failure_reason": "execution_sandbox_unavailable"} if sandbox_unavailable else {}),
         }
 
         self._emit_feedback(
@@ -356,10 +382,13 @@ def _infer_language(filename: str) -> str:
 
 def _normalize_skill_output(skill_name: str, raw_result: dict) -> dict:
     if skill_name == "code_generation":
+        content = raw_result["code"]
+        if content and not content.endswith("\n"):
+            content += "\n"
         return {
             "artifacts": [{
                 "filename": "output.py",
-                "content": raw_result["code"],
+                "content": content,
                 "language": raw_result.get("language", "python"),
                 "artifact_type": "code",
             }],

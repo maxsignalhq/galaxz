@@ -46,13 +46,37 @@ logger = logging.getLogger(__name__)
 
 
 def _read_workspace_path() -> str:
-    import yaml as _yaml
-    path = Path("config/providers.yaml")
-    if not path.exists():
-        return ""
-    with path.open(encoding="utf-8") as f:
-        data = _yaml.safe_load(f) or {}
-    return data.get("workspace_path", "") or ""
+    from workspace.config import load_workspace_config
+
+    config = load_workspace_config()
+    return config.workspace_root if config.enabled else ""
+
+
+def _workspace_path_for_container(host_path: str) -> str:
+    """Map a configured host path to the stable container workspace mount."""
+    from pathlib import Path as _Path
+
+    candidate = _Path(host_path).expanduser().resolve()
+    mounted_host = os.environ.get("GALAXZ_WORKSPACE_HOST_PATH", "")
+    if mounted_host:
+        mounted_root = _Path(mounted_host).expanduser().resolve()
+        try:
+            relative = candidate.relative_to(mounted_root)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"workspace folder {candidate} is not mounted in this container; "
+                    "update GALAXZ_WORKSPACE_HOST_PATH and recreate the services"
+                ),
+            ) from None
+        candidate = (_Path("/workspace") / relative).resolve()
+        if not candidate.is_relative_to(_Path("/workspace").resolve()):
+            raise HTTPException(status_code=422, detail="workspace folder escapes mounted workspace")
+
+    if candidate.is_dir():
+        return str(candidate)
+    raise HTTPException(status_code=422, detail=f"workspace folder does not exist: {candidate}")
 
 
 def _orion_db_path() -> str:
@@ -579,7 +603,12 @@ def post_task(req: TaskRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    workspace_path = _read_workspace_path()
+    # Use the workspace selected for this task, even if settings changed while
+    # the agent was running. Older/custom routers may not return context.
+    workspace_path = (
+        state["context"].get("workspace_root", "")
+        if "context" in state else _read_workspace_path()
+    )
     file_results: list[dict] = []
     ran_file_write = False
 
@@ -1396,31 +1425,44 @@ def get_config():
     import yaml as _yaml
     path = Path("config/providers.yaml")
     if not path.exists():
-        return {"provider": "", "model": "", "api_key_set": False, "base_url": ""}
+        return {"provider": "", "model": "", "api_key_set": False, "base_url": "", "workspace_path": ""}
 
     def _resolve(val: str) -> str:
-        m = _re.match(r'^\$\{(\w+)\}$', str(val))
-        return os.environ.get(m.group(1), "") if m else str(val)
+        m = _re.fullmatch(r'\$\{(\w+)(?::-([^}]*))?\}', str(val))
+        if not m:
+            return str(val)
+        return os.environ.get(m.group(1), m.group(2) or "")
 
     with path.open(encoding="utf-8") as f:
         data = _yaml.safe_load(f)
     llm = data.get("llm", {})
+    workspace = _read_workspace_path()
+    mounted_host = os.environ.get("GALAXZ_WORKSPACE_HOST_PATH", "")
+    workspace_display = workspace
+    if workspace and mounted_host and Path(workspace).is_relative_to("/workspace"):
+        workspace_display = str(Path(mounted_host) / Path(workspace).relative_to("/workspace"))
     return {
         "provider":    _resolve(llm.get("provider", "")),
         "model":       _resolve(llm.get("model", "")),
         "api_key_set": bool(_resolve(llm.get("api_key", ""))),
         "base_url":    _resolve(llm.get("base_url", "")),
+        "workspace_path": workspace_display,
     }
 
 
 class ConfigUpdateRequest(BaseModel):
     model:    str = ""
     base_url: str = ""
+    workspace_path: str = ""
 
 
 @app.post("/config")
 def update_config(req: ConfigUpdateRequest):
     import yaml as _yaml
+    from workspace.config import write_workspace_config
+
+    # Validate all requested changes before updating either configuration file.
+    container_path = _workspace_path_for_container(req.workspace_path) if req.workspace_path else None
     path = Path("config/providers.yaml")
     if not path.exists():
         raise HTTPException(status_code=404, detail="config/providers.yaml not found")
@@ -1431,9 +1473,12 @@ def update_config(req: ConfigUpdateRequest):
         llm["model"] = req.model
     if req.base_url:
         llm["base_url"] = req.base_url
+    if container_path is not None:
+        write_workspace_config(container_path)
     with path.open("w", encoding="utf-8") as f:
         _yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
-    return {"status": "ok"}
+
+    return {"status": "ok", "workspace_path": req.workspace_path or None}
 
 
 @app.get("/health")

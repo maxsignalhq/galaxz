@@ -11,7 +11,7 @@ from urllib.request import urlopen
 
 
 ROOT = Path(__file__).parents[2]
-COMPOSE = ["docker", "compose", "-f", "docker-compose.integration.yml"]
+COMPOSE = ["docker", "compose", "--env-file", "/dev/null", "-p", "galaxz-integration", "-f", "docker-compose.integration.yml"]
 BASE_URL = "http://127.0.0.1:18001"
 
 

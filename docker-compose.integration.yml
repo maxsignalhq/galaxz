@@ -1,6 +1,16 @@
+# Standalone integration stack. Never merge with docker-compose.yml: that
+# imports development credentials, writable bind mounts, ports, and volumes.
 name: galaxz-integration
 
 services:
+  aether:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
   llm-stub:
     image: python:3.11-slim
     volumes:
@@ -14,16 +24,6 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
         ]
-      interval: 2s
-      timeout: 2s
-      retries: 15
-
-  aether:
-    image: redis:7-alpine
-    ports:
-      - "16379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 2s
       timeout: 2s
       retries: 15
@@ -43,10 +43,23 @@ services:
       GOAL_DB_PATH: /var/lib/galaxz/goals.db
       REVIEW_DB_PATH: /var/lib/galaxz/reviews.db
       ARTIFACT_DB_PATH: /var/lib/galaxz/artifacts.db
+      LLM_PROVIDER: anthropic
+      LLM_MODEL: test/test-model
+      LLM_BASE_URL: http://llm-stub:8000
+      LLM_API_KEY: integration-placeholder
       ANTHROPIC_MODEL: test/test-model
       ANTHROPIC_BASE_URL: http://llm-stub:8000
       ANTHROPIC_AUTH_TOKEN: integration-placeholder
       LITELLM_TIMEOUT_SECONDS: "10"
+      GALAXZ_API_KEY: ""
+      GALAXZ_WORKSPACE_ENABLED: "false"
+      GALAXZ_WORKSPACE_ROOT: ""
+      # These scenarios verify routing, storage and recovery. Sandbox execution
+      # is covered separately; no generated code runs in this stack.
+      RIGEL_EXECUTION_CALIBRATION_ENABLED: "false"
+    volumes:
+      - ./test/integration/providers.yaml:/app/config/providers.yaml:ro
+      - ./test/integration/workspace.yaml:/app/config/workspace.yaml:ro
     ports:
       - "18003:8003"
     tmpfs:
@@ -78,6 +91,8 @@ services:
       - /tmp/galaxz
     volumes:
       - job-data:/var/lib/galaxz
+      - ./test/integration/providers.yaml:/app/config/providers.yaml:ro
+      - ./test/integration/workspace.yaml:/app/config/workspace.yaml:ro
     command: python -u services/andromeda_service.py
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
@@ -86,6 +101,7 @@ services:
       retries: 30
 
   worker:
+    build: .
     image: galaxz-integration:latest
     depends_on:
       aether:
@@ -106,6 +122,8 @@ services:
       - /tmp/galaxz
     volumes:
       - job-data:/var/lib/galaxz
+      - ./test/integration/providers.yaml:/app/config/providers.yaml:ro
+      - ./test/integration/workspace.yaml:/app/config/workspace.yaml:ro
     command: python -u services/worker_service.py
     restart: on-failure
 
@@ -117,6 +135,7 @@ services:
         condition: service_healthy
     environment:
       API_TARGET: http://galaxz:8001
+      GALAXZ_API_KEY: ""
     ports:
       - "15173:80"
     healthcheck:

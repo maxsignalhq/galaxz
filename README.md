@@ -80,13 +80,17 @@ See [durable goal operations](docs/operations/durable-goals.md) and the
 Use the isolated integration stack for reproducible service-level checks. It
 uses placeholder provider credentials, temporary container state, and dedicated
 host ports, so it does not read or modify the developer stack's `.env` or data.
+Run its standalone Compose file with the explicit project name shown below;
+do not combine it with the development Compose file. Generated-code execution
+is disabled in this stack: these checks cover routing, persistence, and recovery.
+Sandbox behavior is covered by the execution tests.
 
 ```bash
-docker compose -f docker-compose.integration.yml up --build --wait
+docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml up --build --wait
 curl --fail http://localhost:18001/health
 curl --fail http://localhost:18003/health
 curl --fail http://localhost:15173/api/health
-docker compose -f docker-compose.integration.yml down --volumes
+docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml down --volumes
 ```
 
 The checked-in Andromeda OpenAPI document is a regression contract. Intentional
@@ -119,10 +123,10 @@ npm --prefix prism run typecheck
 npm --prefix prism run build
 
 # Containers and HTTP smoke contract
-docker compose -f docker-compose.integration.yml up --build --wait
+docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml up --build --wait
 .venv/bin/python test/integration/smoke_task.py
 .venv/bin/python test/integration/crash_recovery.py
-docker compose -f docker-compose.integration.yml down --volumes
+docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml down --volumes
 ```
 
 ---

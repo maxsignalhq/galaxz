@@ -160,12 +160,13 @@ def test_rigel_uses_soft_confidence_when_execution_calibration_disabled(
         },
     )
 
-    assert result["confidence"] == pytest.approx(0.668)
+    # Short, nonempty code meets the structural contract: .4 + .4*.92 + .2*.5.
+    assert result["confidence"] == pytest.approx(0.868)
     assert result["execution_result"] is None
     assert result["externally_calibrated"] is False
 
 
-def test_rigel_falls_back_when_execution_sandbox_is_unavailable(
+def test_rigel_fails_closed_when_execution_sandbox_is_unavailable(
     temp_registry,
     monkeypatch,
     rigel_codegen_llm,
@@ -188,13 +189,13 @@ def test_rigel_falls_back_when_execution_sandbox_is_unavailable(
             },
         )
 
-    assert result["confidence"] == pytest.approx(0.668)
-    assert result["execution_result"] is None
+    assert result["confidence"] == pytest.approx(0.15)
+    assert result["execution_result"]["outcome"] == "error"
     assert result["externally_calibrated"] is False
     assert "execution calibration unavailable" in caplog.text.lower()
 
 
-def test_rigel_falls_back_when_docker_daemon_is_unavailable(
+def test_rigel_fails_closed_when_docker_daemon_is_unavailable(
     temp_registry,
     monkeypatch,
     rigel_codegen_llm,
@@ -222,7 +223,61 @@ def test_rigel_falls_back_when_docker_daemon_is_unavailable(
             },
         )
 
-    assert result["confidence"] == pytest.approx(0.668)
-    assert result["execution_result"] is None
+    assert result["confidence"] == pytest.approx(0.15)
+    assert result["execution_result"]["outcome"] == "error"
     assert result["externally_calibrated"] is False
     assert "execution calibration unavailable" in caplog.text.lower()
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError, PermissionError, OSError])
+def test_workspace_sandbox_failure_never_launches_local_python(
+    temp_registry, monkeypatch, rigel_codegen_llm, tmp_path, error,
+):
+    agent, _ = _build_agent(temp_registry, monkeypatch, rigel_codegen_llm)
+    commands = []
+
+    def unavailable(command, **kwargs):
+        commands.append(command)
+        raise error("sandbox unavailable")
+
+    monkeypatch.setattr("agents.rigel.execution.subprocess.run", unavailable)
+    result = agent.run(
+        "rigel.skill.code_generation", {"spec": "add", "language": "python"},
+        context={"workspace_root": str(tmp_path)},
+    )
+    assert len(commands) == 1
+    assert commands[0][0] == "docker"
+    assert result["execution_result"]["outcome"] == "error"
+    assert result["externally_calibrated"] is False
+    assert result["confidence"] < 0.4
+    assert result["failure_reason"] == "execution_sandbox_unavailable"
+
+
+def test_router_cannot_complete_unavailable_sandbox_with_low_threshold(tmp_path, monkeypatch, rigel_codegen_llm):
+    from agents.andromeda.orchestrator import Andromeda
+    from agents.andromeda.task_log import TaskLog
+    from core.artifacts.store import ArtifactStore
+    from core.contracts import TaskContract
+
+    registry = PulsarRegistry(db_path=str(tmp_path / "registry.db"))
+    agent, _ = _build_agent(registry, monkeypatch, rigel_codegen_llm)
+
+    def unavailable(*args, **kwargs):
+        raise FileNotFoundError("docker unavailable")
+
+    monkeypatch.setattr("agents.rigel.execution.subprocess.run", unavailable)
+    router = Andromeda(registry, TaskLog(str(tmp_path / "tasks.db")), agents={"rigel": agent},
+                       artifact_store=ArtifactStore(str(tmp_path / "artifacts.db")))
+    result = router.route(task=TaskContract(
+        origin="test", skill="rigel.skill.code_generation", confidence_threshold=0.0,
+        payload={"spec": "add", "tests": "def test_add(): assert add(1, 2) == 3"},
+    ))
+    assert result["status"] != "complete"
+    assert result["failure_reason"] == "execution_sandbox_unavailable"
+
+
+@pytest.mark.parametrize("code,expected", [("", 0.5), ("   ", 0.5), ("x = 1", 1.0)])
+def test_codegen_structural_score_distinguishes_empty_and_short_code(code, expected):
+    from agents.rigel.confidence import _structural_check
+
+    assert _structural_check("rigel.skill.code_generation", {"code": code}) == expected

@@ -77,6 +77,41 @@ def test_load_workspace_config_missing_file_returns_disabled_default(tmp_path):
     assert cfg.workspace_root == ""
 
 
+def test_repository_workspace_default_is_portable(monkeypatch):
+    monkeypatch.delenv("GALAXZ_WORKSPACE_ENABLED", raising=False)
+    monkeypatch.delenv("GALAXZ_WORKSPACE_ROOT", raising=False)
+    assert load_workspace_config() == WorkspaceConfig(enabled=False, workspace_root="")
+
+
+def test_repository_workspace_supports_environment_configuration(monkeypatch, tmp_path):
+    monkeypatch.setenv("GALAXZ_WORKSPACE_ENABLED", "true")
+    monkeypatch.setenv("GALAXZ_WORKSPACE_ROOT", str(tmp_path))
+    assert load_workspace_config() == WorkspaceConfig(enabled=True, workspace_root=str(tmp_path))
+
+
+def test_running_router_reloads_workspace_between_tasks(tmp_path, monkeypatch):
+    from workspace.config import write_workspace_config
+
+    config = tmp_path / "workspace.yaml"
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    write_workspace_config(str(old), str(config))
+    monkeypatch.setattr("agents.andromeda.orchestrator.load_workspace_config",
+                        lambda: load_workspace_config(str(config)))
+    registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
+    _register_mock_agent(registry)
+    agent = _MockAgent()
+    router = Andromeda(registry, TaskLog(str(tmp_path / "tasks.db")),
+                       agents={"mock": agent}, artifact_store=ArtifactStore(str(tmp_path / "artifacts.db")))
+    first = router.route(required_skills=[_SKILL_ID], payload={})
+    write_workspace_config(str(new), str(config))
+    second = router.route(required_skills=[_SKILL_ID], payload={})
+    assert first["context"]["workspace_root"] == str(old)
+    assert second["context"]["workspace_root"] == str(new)
+
+
 # ── Test 4: Andromeda route injects workspace_root into context ───────────────
 
 _SKILL_ID = "workspace.test.skill"

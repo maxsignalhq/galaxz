@@ -67,9 +67,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate Compose configuration
-        run: docker compose -f docker-compose.integration.yml config --quiet
+        run: docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml config --quiet
       - name: Start isolated stack
-        run: docker compose -f docker-compose.integration.yml up --build --wait
+        run: docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml up --build --wait
       - name: Verify service and proxy health
         run: |
           curl --fail --show-error http://127.0.0.1:18001/health
@@ -78,9 +78,9 @@ jobs:
           curl --fail --show-error http://127.0.0.1:15173/api/health
       - name: Verify packaged CLI inside the application container
         run: |
-          docker compose -f docker-compose.integration.yml exec -T galaxz galaxz --help
-          docker compose -f docker-compose.integration.yml exec -T galaxz galaxz vega --help
-          docker compose -f docker-compose.integration.yml exec -T galaxz galaxz route \
+          docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml exec -T galaxz galaxz --help
+          docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml exec -T galaxz galaxz vega --help
+          docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml exec -T galaxz galaxz route \
             --skill rigel.skill.code_generation \
             --payload '{"spec":"Return a deterministic integration smoke function."}'
       - name: Submit and verify a persisted task
@@ -89,7 +89,7 @@ jobs:
         run: python test/integration/completion_publication.py
       - name: Show container logs on failure
         if: failure()
-        run: docker compose -f docker-compose.integration.yml logs --no-color
+        run: docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml logs --no-color
       - name: Stop isolated stack
         if: always()
-        run: docker compose -f docker-compose.integration.yml down --volumes
+        run: docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.integration.yml down --volumes

@@ -44,6 +44,19 @@ class ArtifactScan:
         }
 
 
+class ArtifactSafetyError(ValueError):
+    def __init__(self, scan: ArtifactScan):
+        self.scan = scan
+        super().__init__(f"artifact safety review required: {scan.status}")
+
+
+def require_safe_artifacts(artifacts: list[dict]) -> ArtifactScan:
+    scan = scan_artifacts(artifacts)
+    if scan.status != "passed":
+        raise ArtifactSafetyError(scan)
+    return scan
+
+
 def scan_artifacts(artifacts: list[dict], *, max_bytes: int | None = None, override: ArtifactScanOverride | None = None) -> ArtifactScan:
     limit = max_bytes or int(os.getenv("GALAXZ_ARTIFACT_MAX_BYTES", str(50 * 1024 * 1024)))
     findings: list[dict] = []
