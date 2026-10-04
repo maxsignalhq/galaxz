@@ -106,8 +106,13 @@ def _make_weighted_skill_match_node(
         weighted_scores: dict[str, float] = {}
         has_seed_weights = False
 
+        origin = state.get("origin")
+        origin_blocked = False
+
         for skill_id in required:
-            matches = registry.get_agents_for_skill(skill_id)
+            matches = registry.get_agents_for_skill(skill_id, origin)
+            if not matches and origin is not None and registry.get_agents_for_skill(skill_id):
+                origin_blocked = True
             agent_ids = {agent.agent_id for agent in matches}
             agent_sets.append(agent_ids)
 
@@ -126,7 +131,7 @@ def _make_weighted_skill_match_node(
             return {
                 "matched_agents": [],
                 "status": "no_agent_found",
-                "failure_reason": "no_skill_match",
+                "failure_reason": "origin_not_allowed" if origin_blocked else "no_skill_match",
             }
 
         if has_seed_weights:
@@ -357,6 +362,7 @@ class Andromeda:
         required_skills = required_skills or [task.skill]
         initial_state = AndromedaState(
             task_id=str(task.task_id),
+            origin=task.origin,
             task_type=task_type,
             required_skills=required_skills,
             priority=priority,
