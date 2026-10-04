@@ -26,6 +26,7 @@ from agents.vega.agent import VegaAgent
 from core.artifacts.store import ArtifactStore
 from core.contracts import TaskContract
 from core.goals.store import GoalStore
+from core.nebula.store import NebulaStore
 from core.pulsar.registry import PulsarRegistry
 from orion.core.weights_loader import RoutingWeightsLoader
 from workspace.config import load_workspace_config
@@ -166,6 +167,7 @@ class Andromeda:
         review_queue: Optional[ReviewQueue] = None,
         artifact_store: Optional[ArtifactStore] = None,
         goal_store: Optional[GoalStore] = None,
+        nebula: Optional[NebulaStore] = None,
     ):
         self.registry = registry
         self.task_log = task_log
@@ -175,6 +177,7 @@ class Andromeda:
         self.artifact_store = artifact_store or ArtifactStore(
             db_path=os.getenv("ARTIFACT_DB_PATH", "data/artifacts.db")
         )
+        self.nebula = nebula or NebulaStore(db_path=os.getenv("NEBULA_DB_PATH", "data/nebula.db"))
         self.goal_store = goal_store or GoalStore()
         self.goal_planner = GoalPlanner(registry)
         self.goal_runner = GoalRunner(self, self.goal_store)
@@ -357,6 +360,17 @@ class Andromeda:
             if task.output_path is not None:
                 context_update["output_path"] = task.output_path
             context = {**(context or {}), **context_update}
+
+        query = " ".join(v for v in task.payload.values() if isinstance(v, str))
+        memories = self.nebula.recall([task.origin, "global"], query=query, limit=5) if query else []
+        if memories:
+            context = {
+                **(context or {}),
+                "memory": [
+                    {"memory_id": str(m.memory_id), "namespace": m.namespace, "content": m.content, "tags": m.tags}
+                    for m in memories
+                ],
+            }
 
         task_type = task_type or task.skill.split(".")[-1]
         required_skills = required_skills or [task.skill]
