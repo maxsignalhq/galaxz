@@ -201,6 +201,13 @@ class ArtifactRollbackRequest(BaseModel):
     organization_id: str | None = None
 
 
+class MemoryRequest(BaseModel):
+    namespace: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    source_task_id: UUID | None = None
+
+
 class GoalRequest(BaseModel):
     objective: str
     confidence_threshold: float = 0.65
@@ -740,6 +747,29 @@ def get_task_stats():
 def get_task_throughput(hours: int = 24):
     hours = max(1, min(hours, 168))
     return _andromeda.task_log.throughput(hours)
+
+
+@app.post("/memory", status_code=201)
+def remember_memory(req: MemoryRequest):
+    try:
+        entry = _andromeda.nebula.remember(req.namespace, req.content, req.tags, req.source_task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return entry.model_dump(mode="json")
+
+
+@app.get("/memory")
+def recall_memory(namespace: str, q: str | None = None, limit: int = 5):
+    namespaces = [ns for ns in namespace.split(",") if ns]
+    entries = _andromeda.nebula.recall(namespaces, query=q, limit=max(1, min(limit, 50)))
+    return [e.model_dump(mode="json") for e in entries]
+
+
+@app.delete("/memory/{memory_id}")
+def forget_memory(memory_id: UUID):
+    if not _andromeda.nebula.forget(memory_id):
+        raise HTTPException(status_code=404, detail="memory not found")
+    return {"deleted": str(memory_id)}
 
 
 @app.get("/artifacts")

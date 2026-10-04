@@ -207,3 +207,26 @@ class PlannedTask(BaseModel):
     confidence: float | None = None
     result: dict | None = None
     error: str | None = None
+
+
+class MemoryEntry(BaseModel):
+    """Nebula: one durable memory, scoped by a free-form namespace.
+
+    Namespaces are conventionally a TaskContract.origin (e.g. ``goal:<id>``) or
+    ``global``; Andromeda recalls both for every routed task.
+    """
+
+    memory_id: UUID = Field(default_factory=uuid4)
+    namespace: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    source_task_id: UUID | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("namespace", "content")
+    @classmethod
+    def validate_memory_strings(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value

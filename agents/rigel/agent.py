@@ -217,6 +217,8 @@ class RigelAgent:
         if handler is None:
             raise ValueError(f"Unknown skill: {skill_id}")
 
+        if context and context.get("memory"):
+            payload = {**payload, "memory": context["memory"]}
         raw_result = handler(payload, self.llm)
 
         skill_name = skill_id.split(".")[-1]

@@ -10,6 +10,10 @@ def code_generation(payload: dict, llm_client) -> dict:
             parts.append(f"# {f.get('path', 'file')}\n{f.get('content', '')}")
         context_block = "\n\nExisting code for conventions:\n" + "\n\n".join(parts)
 
+    memory = payload.get("memory", [])
+    if memory:
+        context_block += "\n\nRelevant memory:\n" + "\n".join(f"- {m['content']}" for m in memory)
+
     user_message = (
         f"Write complete {language} code for the following spec.\n"
         f"Output ONLY the code itself — no explanation, no markdown fences, no JSON.\n\n"
