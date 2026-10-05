@@ -89,13 +89,17 @@ class QuasarAgent:
                 )
             )
             logger.info("[quasar] registered with Pulsar — %d tools", len(definitions))
+        elif registry.get_agent(self.AGENT_ID) is not None:
+            # Pulsar persists manifests; don't advertise tools from a previous config.
+            registry.deregister(self.AGENT_ID)
+            logger.info("[quasar] no MCP tools available — removed stale manifest")
 
     @property
     def skill_ids(self) -> set[str]:
         return set(self._skills)
 
     def status(self) -> dict:
-        return {"configured": True, "servers": self._server_status}
+        return {"configured": bool(self._server_status), "servers": self._server_status}
 
     def run(self, skill_id: str, payload: dict, context: Optional[dict] = None) -> dict:
         target = self._skills.get(skill_id)

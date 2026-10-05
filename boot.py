@@ -55,8 +55,8 @@ def boot(config_path: str = "config/providers.yaml") -> Andromeda:
     vega.start()
     yaml_agents = load_yaml_agents(registry)
     mcp_servers = load_mcp_config()
-    quasar = QuasarAgent(registry, mcp_servers) if mcp_servers else None
-    quasar_agents = {quasar.AGENT_ID: quasar} if quasar and quasar.skill_ids else {}
+    quasar = QuasarAgent(registry, mcp_servers)  # also clears a stale manifest when none are configured
+    quasar_agents = {quasar.AGENT_ID: quasar} if quasar.skill_ids else {}
     from orion import OrionService
     from orion.config import OrionConfig
     orion = OrionService(OrionConfig(), registry=registry)

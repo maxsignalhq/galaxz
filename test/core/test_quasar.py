@@ -139,6 +139,25 @@ def test_load_mcp_config(tmp_path):
     assert load_mcp_config(str(cfg)) == []
 
 
+def test_stale_manifest_is_removed_when_config_no_longer_provides_tools(tmp_path):
+    registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
+    first = QuasarAgent(registry, _servers())
+    first.close()
+    assert registry.get_agent("quasar") is not None
+
+    empty = QuasarAgent(registry, [])  # MCP servers removed from config.yaml
+    assert registry.get_agent("quasar") is None
+    assert empty.status() == {"configured": False, "servers": []}
+    # persisted too: a fresh registry on the same DB must not resurrect it
+    assert PulsarRegistry(db_path=str(tmp_path / "pulsar.db")).get_agent("quasar") is None
+
+    QuasarAgent(registry, _servers()).close()
+    assert registry.get_agent("quasar") is not None
+    all_dead = QuasarAgent(registry, [{"name": "dead", "command": ["/nonexistent/binary"], "timeout_s": 1}])
+    assert registry.get_agent("quasar") is None  # every server failed -> no ghost tools
+    assert all_dead.status()["configured"] is True
+
+
 def test_status_reports_working_and_failed_servers(tmp_path):
     registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
     servers = _servers(["goal:*"]) + [{"name": "dead", "command": ["/nonexistent/binary"], "timeout_s": 1}]
