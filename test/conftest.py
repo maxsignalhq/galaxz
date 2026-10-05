@@ -11,6 +11,26 @@ from core.contracts import FeedbackEvent, OutcomeType
 
 TEST_REDIS_URL = os.environ.get("ORION_REDIS_URL", "redis://localhost:6379/15")
 
+_DEFAULT_DATABASES = {
+    "REVIEW_DB_PATH": "review.db",
+    "ARTIFACT_DB_PATH": "artifacts.db",
+    "NEBULA_DB_PATH": "nebula.db",
+    "GOAL_DB_PATH": "goals.db",
+    "REPOSITORY_DB_PATH": "repositories.db",
+    "JOB_DB_PATH": "jobs.db",
+}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_default_databases(monkeypatch, tmp_path_factory):
+    """Keep tests from writing to ./data, which a running dev service also uses.
+
+    Tests that pass an explicit db_path or set these variables themselves still win.
+    """
+    root = tmp_path_factory.mktemp("default-dbs")
+    for name, filename in _DEFAULT_DATABASES.items():
+        monkeypatch.setenv(name, str(root / filename))
+
 
 def make_feedback_event(**overrides) -> FeedbackEvent:
     defaults = {
