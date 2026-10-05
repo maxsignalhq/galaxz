@@ -351,13 +351,18 @@ class Andromeda:
         ws = load_workspace_config()
         workspace_root = ws.workspace_root if ws.enabled else None
         if task.origin.startswith("goal:"):
-            goal = self.goal_store.get_goal(uuid.UUID(task.origin.removeprefix("goal:")))
-            if goal and goal.workspace_root:
-                workspace_root = goal.workspace_root
-            elif workspace_root:
-                workspace_root = str(Path(workspace_root) / f"goal-{task.origin.removeprefix('goal:')}")
-            if workspace_root:
-                Path(workspace_root).mkdir(parents=True, exist_ok=True)
+            try:
+                goal_id = uuid.UUID(task.origin.removeprefix("goal:"))
+            except ValueError:
+                goal_id = None  # free-form origin such as "goal:demo": not a stored goal, no goal folder
+            if goal_id is not None:
+                goal = self.goal_store.get_goal(goal_id)
+                if goal and goal.workspace_root:
+                    workspace_root = goal.workspace_root
+                elif workspace_root:
+                    workspace_root = str(Path(workspace_root) / f"goal-{goal_id}")
+                if workspace_root:
+                    Path(workspace_root).mkdir(parents=True, exist_ok=True)
         if workspace_root:
             task = task.model_copy(update={"workspace_root": workspace_root})
             context_update = {"workspace_root": workspace_root}
