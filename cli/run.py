@@ -88,5 +88,40 @@ def route(skill, payload, config, output):
         sys.exit(1)
 
 
+@galaxz.group()
+def catalog():
+    """Browse and install agents from the local Constellation catalog."""
+
+
+@catalog.command("list")
+def catalog_list():
+    from core.constellation.catalog import Catalog
+
+    entries = Catalog().list()
+    if not entries:
+        print("No agents in the catalog.")
+    for e in entries:
+        installed = e["installed_version"] or "-"
+        print(f"{e['agent_id']:<16} {e['version']:<8} installed={installed:<8} {e['description']}")
+
+
+@catalog.command("install")
+@click.argument("agent_id")
+@click.option("--version", default=None, help="Version to install (default: latest)")
+@click.option("--force", is_flag=True, help="Overwrite an existing, different config/agents file")
+def catalog_install(agent_id, version, force):
+    """Install AGENT_ID into config/agents/ (takes effect after a restart)."""
+    from core.constellation.catalog import Catalog, CatalogError
+
+    try:
+        result = Catalog().install(agent_id, version=version, force=force)
+    except CatalogError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+    print(f"{result['status']}: {result['agent_id']} {result['version']}")
+    if result["restart_required"]:
+        print("Restart Galaxz to load the new agent.")
+
+
 if __name__ == "__main__":
     galaxz()

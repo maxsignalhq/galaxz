@@ -1,0 +1,30 @@
+agent_id: summarizer
+agent_name: "Summarizer"
+version: "0.1.0"
+color: "#38bdf8"
+
+catalog:
+  description: "Condense long text into a short summary with key points"
+  author: "galaxz"
+  tags: ["text", "summary"]
+
+skills:
+  - skill_id: "summarizer.skill.summarize"
+    description: "Summarize a block of text into a short paragraph and bullet key points"
+    avg_confidence: 0.80
+    avg_latency_ms: 900
+    writable: true
+    payload_defaults:
+      text: ""
+      max_words: "120"
+    steps:
+      - artifact_filename: "summary.md"
+        artifact_language: "markdown"
+        artifact_type: "report"
+        system: |
+          You are a precise editor. Summarize faithfully and do not add facts that are not in the text.
+        user: |
+          Summarize the following text in at most {max_words} words, then list the key points as bullets.
+
+          {text}
+    summary_template: "Summary generated"
