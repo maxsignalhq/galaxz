@@ -1,6 +1,6 @@
 llm:
   api_key: ${LLM_API_KEY:-}
-  base_url: http://localhost:11434
+  base_url: ${LLM_BASE_URL:-http://host.docker.internal:11434}
   model: ${LLM_MODEL:-qwen3:1.7b}
   provider: ${LLM_PROVIDER:-ollama}
 workspace_path: ''

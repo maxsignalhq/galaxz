@@ -108,7 +108,7 @@ services:
       NEBULA_DB_PATH: /var/lib/galaxz/nebula.db
       GALAXZ_WORKSPACE_ROOT: /workspace
       GALAXZ_WORKSPACE_ENABLED: "true"
-      GALAXZ_WORKSPACE_HOST_PATH: ${GALAXZ_WORKSPACE_HOST_PATH:-/Users/rmehra/Projects/galaxz}
+      GALAXZ_WORKSPACE_HOST_PATH: ${GALAXZ_WORKSPACE_HOST_PATH:-.}
     ports:
       - "8001:8001"
     volumes:
@@ -150,7 +150,7 @@ services:
       NEBULA_DB_PATH: /var/lib/galaxz/nebula.db
       GALAXZ_WORKSPACE_ROOT: /workspace
       GALAXZ_WORKSPACE_ENABLED: "true"
-      GALAXZ_WORKSPACE_HOST_PATH: ${GALAXZ_WORKSPACE_HOST_PATH:-/Users/rmehra/Projects/galaxz}
+      GALAXZ_WORKSPACE_HOST_PATH: ${GALAXZ_WORKSPACE_HOST_PATH:-.}
       WORKER_CONCURRENCY: "1"
       WORKER_LEASE_SECONDS: "30"
       WORKER_HEARTBEAT_SECONDS: "10"

@@ -137,7 +137,7 @@ const AGENTS = [
 const FOOTER_COLS = [
   { label: 'Product', links: [
     ['Dashboard', '/dashboard'], ['Dev Console', '/dev-console'], ['Orion Analytics', '/orion'],
-    ['Changelog', 'https://github.com/maxsignalhq/galaxz/blob/master/CHANGELOG.md'],
+    ['Changelog', 'https://github.com/maxsignalhq/galaxz/blob/main/CHANGELOG.md'],
   ] },
   { label: 'Docs', links: [
     ['Quickstart', 'https://github.com/maxsignalhq/galaxz#quickstart'],
@@ -147,9 +147,9 @@ const FOOTER_COLS = [
   ] },
   { label: 'Open Source', links: [
     ['GitHub', 'https://github.com/maxsignalhq/galaxz'],
-    ['Contributing', 'https://github.com/maxsignalhq/galaxz/blob/master/CONTRIBUTING.md'],
+    ['Contributing', 'https://github.com/maxsignalhq/galaxz/blob/main/CONTRIBUTING.md'],
     ['Roadmap', 'https://github.com/maxsignalhq/galaxz#production-roadmap'],
-    ['MIT License', 'https://github.com/maxsignalhq/galaxz/blob/master/LICENSE'],
+    ['MIT License', 'https://github.com/maxsignalhq/galaxz/blob/main/LICENSE'],
   ] },
   { label: 'Company', links: [
     ['About', 'https://github.com/maxsignalhq/galaxz'],
