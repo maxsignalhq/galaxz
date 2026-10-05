@@ -71,3 +71,11 @@ def test_persists_across_instances(tmp_path):
     path = str(tmp_path / "nebula.db")
     NebulaStore(db_path=path).remember("global", "durable")
     assert [e.content for e in NebulaStore(db_path=path).list("global")] == ["durable"]
+
+
+def test_namespaces_lists_counts(store, tmp_path):
+    store.remember("global", "a")
+    store.remember("global", "b")
+    store.remember("goal:1", "c")
+    assert store.namespaces() == [{"namespace": "global", "count": 2}, {"namespace": "goal:1", "count": 1}]
+    assert NebulaStore(db_path=str(tmp_path / "empty.db")).namespaces() == []

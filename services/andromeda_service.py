@@ -770,6 +770,19 @@ def recall_memory(namespace: str, q: str | None = None, limit: int = 5):
     return [e.model_dump(mode="json") for e in entries]
 
 
+@app.get("/quasar")
+def get_quasar_status():
+    quasar = getattr(_andromeda, "quasar", None)
+    if quasar is None:
+        return {"configured": False, "servers": []}
+    return quasar.status()
+
+
+@app.get("/memory/namespaces")
+def list_memory_namespaces():
+    return _andromeda.nebula.namespaces()
+
+
 @app.delete("/memory/{memory_id}")
 def forget_memory(memory_id: UUID):
     if not _andromeda.nebula.forget(memory_id):

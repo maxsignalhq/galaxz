@@ -55,11 +55,8 @@ def boot(config_path: str = "config/providers.yaml") -> Andromeda:
     vega.start()
     yaml_agents = load_yaml_agents(registry)
     mcp_servers = load_mcp_config()
-    quasar_agents = {}
-    if mcp_servers:
-        quasar = QuasarAgent(registry, mcp_servers)
-        if quasar.skill_ids:
-            quasar_agents[quasar.AGENT_ID] = quasar
+    quasar = QuasarAgent(registry, mcp_servers) if mcp_servers else None
+    quasar_agents = {quasar.AGENT_ID: quasar} if quasar and quasar.skill_ids else {}
     from orion import OrionService
     from orion.config import OrionConfig
     orion = OrionService(OrionConfig(), registry=registry)
@@ -82,6 +79,7 @@ def boot(config_path: str = "config/providers.yaml") -> Andromeda:
         goal_store=goal_store,
     )
     andromeda.orion = orion
+    andromeda.quasar = quasar  # kept even if every server failed, so /quasar can report why
     return andromeda
 
 

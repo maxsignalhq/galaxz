@@ -137,3 +137,20 @@ def test_load_mcp_config(tmp_path):
     assert load_mcp_config(str(tmp_path / "missing.yaml")) == []
     cfg.write_text("servers: []\n")
     assert load_mcp_config(str(cfg)) == []
+
+
+def test_status_reports_working_and_failed_servers(tmp_path):
+    registry = PulsarRegistry(db_path=str(tmp_path / "pulsar.db"))
+    servers = _servers(["goal:*"]) + [{"name": "dead", "command": ["/nonexistent/binary"], "timeout_s": 1}]
+    agent = QuasarAgent(registry, servers)
+    try:
+        status = agent.status()
+        assert status["configured"] is True
+        good, dead = status["servers"]
+        assert good["name"] == "fake" and good["ok"] is True and good["error"] is None
+        assert good["allowed_origins"] == ["goal:*"]
+        assert [t["skill_id"] for t in good["tools"]][:2] == ["quasar.fake.echo", "quasar.fake.fail"]
+        assert dead["name"] == "dead" and dead["ok"] is False
+        assert "failed to start" in dead["error"] and dead["tools"] == []
+    finally:
+        agent.close()
