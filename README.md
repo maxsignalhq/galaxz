@@ -176,6 +176,12 @@ python -m cli.run catalog install summarizer
 - **Quasar:** list MCP servers in `config/mcp.yaml` (see the commented example) and restart.
   Each tool becomes a skill named `quasar.<server>.<tool>`; stdio servers only, and they run
   with Galaxz's privileges, so list only servers you trust.
+- **Signed scorecards:** Orion's real outcome data per agent and skill (success rate with a Wilson 95%
+  interval, partial/fail rates, average confidence, human-verified share, p50/p95 latency) can be
+  attested with an Ed25519 key you hold. `python -m cli.run scorecard keygen` makes a key; set
+  `GALAXZ_SCORECARD_KEY_PATH`, then `GET /scorecards` (or `/scorecards/{skill_id}`, `?days=`) returns signed
+  envelopes and `GET /scorecards/key` the public key. Anyone can check one offline with
+  `python -m cli.run scorecard verify FILE --public-key KEY`. Without a key the endpoints return 503.
 - **Access control:** give a skill `allowed_origins` (for example `["goal:*"]`) in its manifest to
   limit which task origins may use it. A task with no permitted agent returns `no_agent_found`
   with `failure_reason="origin_not_allowed"`. This is policy, not authentication.

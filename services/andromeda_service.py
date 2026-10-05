@@ -13,7 +13,7 @@ from typing import Optional
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,7 @@ from core.jobs import PostgresJobRepository, SqliteJobRepository
 from core.goals import DurableGoalCoordinator
 from core.repositories import RepositoryAccessError, RepositoryStore
 from core.github import GitHubAppClient, GitHubClient, PullRequestEvidence, WebhookStore
+from core.scorecards import ScorecardError, ScorecardSigner, build_scorecards, load_signer
 from core.security import ArtifactScanOverride, scan_artifacts
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
@@ -1229,6 +1230,53 @@ def get_orion_analytics(hours: int = 24):
         }
     except sqlite3.Error:
         return {"event_volume": [], "by_domain": [], "by_agent": [], "outcome_counts": {}}
+
+
+_scorecard_signer_cache: ScorecardSigner | None = None
+
+
+def _scorecard_signer() -> ScorecardSigner | None:
+    global _scorecard_signer_cache
+    if _scorecard_signer_cache is None:
+        try:
+            _scorecard_signer_cache = load_signer()
+        except ScorecardError as exc:
+            logger.error("scorecard signing key is unusable: %s", exc)
+            return None
+    return _scorecard_signer_cache
+
+
+def _require_scorecard_signer() -> ScorecardSigner:
+    signer = _scorecard_signer()
+    if signer is None:
+        raise HTTPException(status_code=503, detail="scorecard signing is not configured")
+    return signer
+
+
+def _signed_scorecards(days: int, skill_id: str | None = None) -> list[dict]:
+    signer = _require_scorecard_signer()
+    cards = build_scorecards(
+        _orion_db_path(), days=days, issuer=os.getenv("GALAXZ_SCORECARD_ISSUER", "galaxz"), skill_id=skill_id
+    )
+    return [signer.sign(card) for card in cards]
+
+
+@app.get("/scorecards/key")
+def get_scorecard_key():
+    return _require_scorecard_signer().public_key_info()
+
+
+@app.get("/scorecards")
+def list_scorecards(days: int = Query(30, ge=1, le=365)):
+    return {"scorecards": _signed_scorecards(days)}
+
+
+@app.get("/scorecards/{skill_id}")
+def get_skill_scorecards(skill_id: str, days: int = Query(30, ge=1, le=365)):
+    cards = _signed_scorecards(days, skill_id)
+    if not cards:
+        raise HTTPException(status_code=404, detail="no Orion events for this skill in the window")
+    return {"scorecards": cards}
 
 
 @app.get("/agents")
