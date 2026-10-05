@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -872,8 +872,23 @@ def rollback_artifact(req: ArtifactRollbackRequest):
     return {"content": row["content"], "version": req.version, "written": written}
 
 
+def _feedback_task_id(queue_task_id: str, item: dict) -> UUID:
+    """FeedbackEvent needs a UUID; plan reviews are keyed 'plan:<goal_id>' in the queue."""
+    try:
+        return UUID(queue_task_id)
+    except ValueError:
+        if item.get("goal_id"):
+            return UUID(item["goal_id"])
+        return uuid5(NAMESPACE_URL, queue_task_id)
+
+
 def _resume_goal_from_review(queue_task_id: str, goal_id: str, approved: bool) -> None:
     gid = UUID(goal_id)
+    if _andromeda.goal_store.get_goal(gid) is None:
+        # Orphaned item (goal deleted or from another database): let the reviewer
+        # dismiss it instead of failing with a 500 after the item was resolved.
+        logger.warning("review item %s references missing goal %s; not resuming", queue_task_id, goal_id)
+        return
     if queue_task_id.startswith("plan:"):
         if approved:
             _goal_coordinator().start(gid, actor="review")
@@ -1206,7 +1221,7 @@ def approve_task(task_id: str, req: ResolveRequest = ResolveRequest()):
         _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
 
     event = FeedbackEvent(
-        task_id=task_id,
+        task_id=_feedback_task_id(task_id, item),
         task_category=item.get("task_type") or "unknown",
         agent_id="human_reviewer",
         outcome=OutcomeType.approved,
@@ -1237,7 +1252,7 @@ def accept_task(task_id: str, req: ResolveRequest = ResolveRequest()):
         _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
 
     event = FeedbackEvent(
-        task_id=task_id,
+        task_id=_feedback_task_id(task_id, item),
         task_category=item.get("task_type") or "unknown",
         agent_id="human_reviewer",
         outcome=OutcomeType.approved,
@@ -1268,7 +1283,7 @@ def reject_task(task_id: str, req: ResolveRequest = ResolveRequest()):
         _resume_goal_from_review(item["task_id"], item["goal_id"], approved=False)
 
     event = FeedbackEvent(
-        task_id=task_id,
+        task_id=_feedback_task_id(task_id, item),
         task_category=item.get("task_type") or "unknown",
         agent_id="human_reviewer",
         outcome=OutcomeType.failed,
