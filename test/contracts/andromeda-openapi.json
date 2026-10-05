@@ -368,6 +368,57 @@
         "title": "JobRequest",
         "type": "object"
       },
+      "LessonProposeRequest": {
+        "properties": {
+          "min_examples": {
+            "default": 3,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Min Examples",
+            "type": "integer"
+          }
+        },
+        "title": "LessonProposeRequest",
+        "type": "object"
+      },
+      "LessonReviewRequest": {
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "reviewed_by": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reviewed By",
+            "type": "string"
+          },
+          "reviewer_note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Note"
+          }
+        },
+        "required": [
+          "reviewed_by"
+        ],
+        "title": "LessonReviewRequest",
+        "type": "object"
+      },
       "MemoryRequest": {
         "properties": {
           "content": {
@@ -1821,6 +1872,178 @@
           }
         },
         "summary": "Cancel Job"
+      }
+    },
+    "/lessons": {
+      "get": {
+        "operationId": "list_skill_lessons_lessons_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "pattern": "^(pending|approved|rejected|all)$",
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Skill Lessons"
+      }
+    },
+    "/lessons/propose": {
+      "post": {
+        "description": "Ask Orion for pending lessons from human corrections. Nothing is applied until approved.",
+        "operationId": "propose_skill_lessons_lessons_propose_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LessonProposeRequest",
+                "default": {
+                  "min_examples": 3
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Skill Lessons"
+      }
+    },
+    "/lessons/{candidate_id}/approve": {
+      "post": {
+        "operationId": "approve_skill_lesson_lessons__candidate_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LessonReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Skill Lesson"
+      }
+    },
+    "/lessons/{candidate_id}/reject": {
+      "post": {
+        "operationId": "reject_skill_lesson_lessons__candidate_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LessonReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Skill Lesson"
       }
     },
     "/live": {

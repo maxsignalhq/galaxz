@@ -13,7 +13,7 @@ from typing import Optional
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -35,7 +35,10 @@ from core.github import GitHubAppClient, GitHubClient, PullRequestEvidence, Webh
 from core.security import ArtifactScanOverride, scan_artifacts
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
+from core.nebula.store import SKILL_NAMESPACE_PREFIX
 from core.storage.manage import validate_runtime_database_configuration
+from orion.core.lesson_store import MAX_LESSON_CHARS, LessonStore, normalize as normalize_lesson
+from orion.pipeline.lesson_proposal import propose_lessons
 from orion.core.candidate_client import CandidateClient, CandidateNotFoundError
 from orion.core.dataset_store import DatasetStore
 
@@ -1389,6 +1392,82 @@ def reject_finetune_candidate(candidate_id: str, req: CandidateReviewRequest):
         _candidate_client.reject(candidate_id, req.reviewed_by, req.reviewer_note)
     except CandidateNotFoundError:
         raise HTTPException(status_code=404, detail="candidate not found")
+    return {"status": "rejected", "candidate_id": candidate_id}
+
+
+_lesson_stores: dict[str, LessonStore] = {}
+
+
+def _lesson_store() -> LessonStore:
+    path = str(Path(_orion_db_path()).parent / "lessons.db")
+    if path not in _lesson_stores:
+        _lesson_stores[path] = LessonStore(path)
+    return _lesson_stores[path]
+
+
+def _lesson_llm(system: str, user: str) -> str:
+    raw, _, _ = call_llm([{"role": "user", "content": user}], load_provider_config(), system_prompt=system)
+    return raw
+
+
+class LessonProposeRequest(BaseModel):
+    min_examples: int = Field(default=3, ge=1, le=50)
+
+
+class LessonReviewRequest(BaseModel):
+    reviewed_by: str = Field(min_length=1, max_length=100)
+    reviewer_note: Optional[str] = Field(default=None, max_length=1000)
+    content: Optional[str] = None  # an edited lesson, instead of the proposed one
+
+
+@app.post("/lessons/propose")
+def propose_skill_lessons(req: LessonProposeRequest = LessonProposeRequest()):
+    """Ask Orion for pending lessons from human corrections. Nothing is applied until approved."""
+    created = propose_lessons(
+        _orion_db_path(), _lesson_store(), _lesson_llm, min_examples=req.min_examples
+    )
+    return {"proposed": [c.model_dump() for c in created]}
+
+
+@app.get("/lessons")
+def list_skill_lessons(status: str = Query("pending", pattern="^(pending|approved|rejected|all)$")):
+    candidates = _lesson_store().list(None if status == "all" else status)
+    return {"lessons": [c.model_dump() for c in candidates]}
+
+
+@app.post("/lessons/{candidate_id}/approve")
+def approve_skill_lesson(candidate_id: str, req: LessonReviewRequest):
+    store = _lesson_store()
+    candidate = store.get(candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="lesson not found")
+    edited = None
+    if req.content is not None:
+        edited = normalize_lesson(req.content)
+        if not edited or len(edited) > MAX_LESSON_CHARS:
+            raise HTTPException(status_code=422, detail=f"content must be 1-{MAX_LESSON_CHARS} characters")
+    if not store.claim(candidate_id, "approved", req.reviewed_by, req.reviewer_note, edited):
+        raise HTTPException(status_code=409, detail="lesson already reviewed")
+    try:
+        entry = _andromeda.nebula.remember(
+            namespace=f"{SKILL_NAMESPACE_PREFIX}{candidate.skill_id}",
+            content=edited or candidate.content,
+            tags=["lesson", f"agent:{candidate.agent_id}"],
+        )
+    except Exception:
+        store.revert(candidate_id)  # nothing was stored, so the reviewer can try again
+        raise HTTPException(status_code=500, detail="could not store the lesson")
+    store.attach_memory(candidate_id, str(entry.memory_id))
+    return {"status": "approved", "candidate_id": candidate_id, "memory_id": str(entry.memory_id)}
+
+
+@app.post("/lessons/{candidate_id}/reject")
+def reject_skill_lesson(candidate_id: str, req: LessonReviewRequest):
+    store = _lesson_store()
+    if store.get(candidate_id) is None:
+        raise HTTPException(status_code=404, detail="lesson not found")
+    if not store.claim(candidate_id, "rejected", req.reviewed_by, req.reviewer_note):
+        raise HTTPException(status_code=409, detail="lesson already reviewed")
     return {"status": "rejected", "candidate_id": candidate_id}
 
 

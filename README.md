@@ -176,6 +176,12 @@ python -m cli.run catalog install summarizer
 - **Quasar:** list MCP servers in `config/mcp.yaml` (see the commented example) and restart.
   Each tool becomes a skill named `quasar.<server>.<tool>`; stdio servers only, and they run
   with Galaxz's privileges, so list only servers you trust.
+- **Skill lessons:** turn human corrections into reusable guidance, with a person approving every step.
+  `POST /lessons/propose` asks the LLM to distil guidelines from corrected tasks in Orion (3+ per
+  agent and skill); they wait as pending candidates (`GET /lessons`). `POST /lessons/{id}/approve`
+  (optionally with edited `content`) stores one as a Nebula memory in `skill:<skill_id>`, which routing
+  then passes to that skill (up to 3, newest first); `POST /lessons/{id}/reject` discards it. Nothing is
+  applied until approved, and `DELETE /memory/{id}` revokes an approved lesson.
 - **Access control:** give a skill `allowed_origins` (for example `["goal:*"]`) in its manifest to
   limit which task origins may use it. A task with no permitted agent returns `no_agent_found`
   with `failure_reason="origin_not_allowed"`. This is policy, not authentication.

@@ -1,5 +1,21 @@
 # Galaxz Release Notes
 
+## Unreleased — Skill lessons
+
+A cheap, human-gated learning loop that works today, instead of waiting on fine-tuning. Nothing happens until someone proposes and approves a lesson. Design: [`docs/specs/2026-10-05-skill-lessons-design.md`](docs/specs/2026-10-05-skill-lessons-design.md).
+
+| System | What it does |
+|--------|--------------|
+| **Lessons** (Orion → Nebula) | `POST /lessons/propose` distils short guidelines from Orion events that carry a `human_correction` (3+ unused corrections per agent and skill; one LLM call per group, corrections quoted as data, lessons capped at 300 characters). Results are pending `LessonCandidate`s in `lessons.db` beside Orion's events DB. `GET /lessons?status=`, `POST /lessons/{id}/approve` (optional edited `content`) and `/reject`. Approval writes a Nebula memory in `skill:<skill_id>` (tags `lesson`, `agent:<id>`); `Andromeda.route()` always passes the newest 3 for the routed skill in `context["memory"]`. Revoke with `DELETE /memory/{id}`. No new core contract. |
+
+### Known limitations
+
+- Only Rigel code generation renders `context["memory"]` today, so only that skill benefits so far.
+- Quality depends on the LLM and on corrections existing; nothing measures automatically that a lesson helped (signed scorecards can show success rate before and after).
+- Proposals are manual (no background job); a group with more than 8 unused corrections is drained over several calls.
+
+---
+
 ## v1.1.0 — Memory, tools, catalog and access control
 
 Four platform capabilities — agent memory, MCP tool support, a local agent catalog and per-skill access control — built on Galaxz's own contracts. Every one is additive and off or empty by default, so a v1.0 deployment behaves the same until you use them. Design notes live in [`docs/specs/`](docs/specs/).
