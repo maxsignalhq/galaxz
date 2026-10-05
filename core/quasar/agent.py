@@ -38,9 +38,18 @@ class QuasarAgent:
         self._clients: dict[str, McpStdioClient] = {}
         self._skills: dict[str, tuple[str, str]] = {}  # skill_id -> (server, tool)
         definitions: list[SkillDefinition] = []
+        self._server_status: list[dict] = []
 
         for server in servers:
             name = server["name"]
+            status = {
+                "name": name,
+                "ok": False,
+                "error": None,
+                "tools": [],
+                "allowed_origins": server.get("allowed_origins"),
+            }
+            self._server_status.append(status)
             client = client_factory(
                 server["command"], env=server.get("env"), timeout_s=server.get("timeout_s", 30.0)
             )
@@ -48,16 +57,20 @@ class QuasarAgent:
                 tools = client.list_tools()
             except McpError as exc:
                 logger.warning("[quasar] skipping MCP server %s: %s", name, exc)
+                status["error"] = str(exc)
                 client.close()
                 continue
+            status["ok"] = True
             self._clients[name] = client
             for tool in tools:
                 skill_id = f"quasar.{name}.{tool['name']}"
+                description = tool.get("description") or tool["name"]
                 self._skills[skill_id] = (name, tool["name"])
+                status["tools"].append({"skill_id": skill_id, "description": description})
                 definitions.append(
                     SkillDefinition(
                         skill_id=skill_id,
-                        description=tool.get("description") or tool["name"],
+                        description=description,
                         input_schema=tool.get("inputSchema") or {},
                         output_schema={},
                         avg_confidence=0.9,
@@ -80,6 +93,9 @@ class QuasarAgent:
     @property
     def skill_ids(self) -> set[str]:
         return set(self._skills)
+
+    def status(self) -> dict:
+        return {"configured": True, "servers": self._server_status}
 
     def run(self, skill_id: str, payload: dict, context: Optional[dict] = None) -> dict:
         target = self._skills.get(skill_id)

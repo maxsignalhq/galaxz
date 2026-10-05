@@ -111,6 +111,14 @@ class NebulaStore:
         ranked = sorted((p for p in scored if p[0] > 0), key=lambda p: -p[0])
         return [e for _, e in ranked[:limit]]
 
+    def namespaces(self) -> list[dict]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT namespace, COUNT(*) AS count FROM memories "
+                "GROUP BY namespace ORDER BY count DESC, namespace"
+            ).fetchall()
+        return [{"namespace": r["namespace"], "count": r["count"]} for r in rows]
+
     def forget(self, memory_id: UUID) -> bool:
         with self._lock, self._connect() as conn:
             cur = conn.execute("DELETE FROM memories WHERE memory_id = ?", (str(memory_id),))

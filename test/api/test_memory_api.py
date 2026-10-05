@@ -48,3 +48,11 @@ def test_multiple_namespaces_comma_separated(client):
     client.post("/memory", headers=AUTH, json={"namespace": "b", "content": "from b"})
     hits = client.get("/memory", headers=AUTH, params={"namespace": "a,b"}).json()
     assert {h["content"] for h in hits} == {"from a", "from b"}
+
+
+def test_namespaces_endpoint(client):
+    client.post("/memory", headers=AUTH, json={"namespace": "goal:1", "content": "x"})
+    client.post("/memory", headers=AUTH, json={"namespace": "global", "content": "y"})
+    client.post("/memory", headers=AUTH, json={"namespace": "global", "content": "z"})
+    got = client.get("/memory/namespaces", headers=AUTH).json()
+    assert got == [{"namespace": "global", "count": 2}, {"namespace": "goal:1", "count": 1}]

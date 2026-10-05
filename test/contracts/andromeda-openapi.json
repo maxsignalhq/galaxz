@@ -1937,6 +1937,22 @@
         "summary": "Remember Memory"
       }
     },
+    "/memory/namespaces": {
+      "get": {
+        "operationId": "list_memory_namespaces_memory_namespaces_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Memory Namespaces"
+      }
+    },
     "/memory/{memory_id}": {
       "delete": {
         "operationId": "forget_memory_memory__memory_id__delete",
@@ -2059,6 +2075,22 @@
           }
         },
         "summary": "Run Orion Training"
+      }
+    },
+    "/quasar": {
+      "get": {
+        "operationId": "get_quasar_status_quasar_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Quasar Status"
       }
     },
     "/ready": {
