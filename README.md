@@ -176,6 +176,14 @@ python -m cli.run catalog install summarizer
 - **Quasar:** list MCP servers in `config/mcp.yaml` (see the commented example) and restart.
   Each tool becomes a skill named `quasar.<server>.<tool>`; stdio servers only, and they run
   with Galaxz's privileges, so list only servers you trust.
+- **Wormhole (A2A):** Galaxz speaks Google's [A2A](https://a2a-protocol.org) v1.0 agent-to-agent protocol in
+  both directions, configured in `config/a2a.yaml` (empty by default). *Inbound:* the Agent Card is served at
+  `/.well-known/agent-card.json` and tasks arrive at `POST /a2a` (`SendMessage`, `SendStreamingMessage`,
+  `GetTask`, `CancelTask`, `GetExtendedAgentCard`); each caller has its own bearer token (`token_env`) mapped to a
+  fixed `a2a:*` origin, so `allowed_origins` rules apply to it. Inbound tasks run on the job queue, so the
+  `worker` service must be running. Set `A2A_PUBLIC_URL` when Galaxz sits behind a proxy. *Outbound:* each skill
+  of each remote agent in `agents:` becomes a Pulsar skill named `wormhole.<agent>.<skill>`; `GET /wormhole`
+  reports their status. v1.0 peers only; cards are not signature-verified, so list only agents you trust.
 - **Access control:** give a skill `allowed_origins` (for example `["goal:*"]`) in its manifest to
   limit which task origins may use it. A task with no permitted agent returns `no_agent_found`
   with `failure_reason="origin_not_allowed"`. This is policy, not authentication.

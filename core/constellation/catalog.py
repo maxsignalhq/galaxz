@@ -11,7 +11,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 RESERVED_AGENT_IDS = frozenset(
-    {"rigel", "vega", "andromeda", "pulsar", "orion", "aether", "quasar"}
+    {"rigel", "vega", "andromeda", "pulsar", "orion", "aether", "quasar", "wormhole"}
 )
 _ID = re.compile(r"^[a-z][a-z0-9_]*$")
 _VERSION = re.compile(r"^\d+\.\d+\.\d+$")
