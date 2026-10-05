@@ -135,6 +135,12 @@ docker compose --env-file /dev/null -p galaxz-integration -f docker-compose.inte
 
 Set `GALAXZ_API_KEY` in `.env` to secure your deployment. Omit it for local development.
 
+| Variable / file | Purpose |
+|-----------------|---------|
+| `NEBULA_DB_PATH` | Where Nebula (agent memory) stores notes (default `data/nebula.db`) |
+| `config/mcp.yaml` | MCP servers whose tools Quasar exposes as skills (empty by default) |
+| `GALAXZ_CATALOG_DIR`, `GALAXZ_AGENTS_DIR` | Override the agent catalog (`catalog/`) and installed-agent (`config/agents/`) directories |
+
 ---
 
 ## System overview
@@ -147,6 +153,34 @@ Set `GALAXZ_API_KEY` in `.env` to secure your deployment. Omit it for local deve
 | Pulsar    | Skill Registry        | ✅ Live |
 | Aether    | Message Bus (Redis)   | ✅ Live |
 | Orion     | Data Refinery         | ✅ Live |
+| Nebula        | Agent memory (notes recalled into tasks) | ✅ Live |
+| Quasar        | MCP tool manager (tools as skills)       | ✅ Live |
+| Constellation | Local catalog of installable agents      | ✅ Live |
+
+### Memory, tools, catalog and access control
+
+All four are additive and empty by default. In the Prism UI they are the **Memory**,
+**Agents & Tools** and **Catalog** pages.
+
+```bash
+# Nebula — remember something; matching notes are added to later Rigel code-generation prompts
+curl -X POST localhost:8001/memory -H "Authorization: Bearer $GALAXZ_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"namespace":"global","content":"Parse config with yaml.safe_load","tags":["python"]}'
+
+# Constellation — install an agent from catalog/ into config/agents/ (restart to load it)
+python -m cli.run catalog list
+python -m cli.run catalog install summarizer
+```
+
+- **Quasar:** list MCP servers in `config/mcp.yaml` (see the commented example) and restart.
+  Each tool becomes a skill named `quasar.<server>.<tool>`; stdio servers only, and they run
+  with Galaxz's privileges, so list only servers you trust.
+- **Access control:** give a skill `allowed_origins` (for example `["goal:*"]`) in its manifest to
+  limit which task origins may use it. A task with no permitted agent returns `no_agent_found`
+  with `failure_reason="origin_not_allowed"`. This is policy, not authentication.
+
+See [RELEASE.md](RELEASE.md) for details and limits, and [docs/specs/](docs/specs/) for the designs.
 
 ---
 
@@ -166,14 +200,20 @@ agents.
 │   ├── andromeda/       # Orchestrator / routing graph
 │   ├── rigel/           # Engineering agent
 │   └── vega/            # QA agent (analyzer → test designer → bug reporter)
+├── catalog/             # Installable agent packages (Constellation)
 ├── cli/                 # CLI entrypoint
 ├── config/
+│   ├── mcp.yaml         # MCP servers for Quasar (empty by default)
 │   └── providers.yaml   # LLM provider config (model, key, base URL)
 ├── core/
 │   ├── aether/          # Redis Streams client
+│   ├── constellation/   # Agent catalog (list / install)
 │   ├── contracts/       # Task, Skill, and Refinery contract schemas
 │   ├── llm/             # Provider abstraction (litellm)
-│   └── pulsar/          # Agent skill registry
+│   ├── nebula/          # Agent memory store
+│   ├── pulsar/          # Agent skill registry
+│   └── quasar/          # MCP client and tool-to-skill agent
+├── docs/specs/          # Design notes for each capability
 ├── evals/               # Evaluation harness and datasets
 ├── orion/               # Data refinery (feedback ingestion, heuristics)
 ├── prism/               # Web UI (Vite / TypeScript)
