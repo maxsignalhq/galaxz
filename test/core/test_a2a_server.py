@@ -237,6 +237,7 @@ def test_queued_and_running_states(env):
         ({"status": "complete", "confidence": 0.9, "result": {"code": "x"}, "summary": "s"}, "TASK_STATE_COMPLETED"),
         ({"status": "escalated", "confidence": 0.1}, "TASK_STATE_INPUT_REQUIRED"),
         ({"status": "no_agent_found", "failure_reason": "origin_not_allowed"}, "TASK_STATE_REJECTED"),
+        ({"status": "no_agent_found", "failure_reason": "policy_denied"}, "TASK_STATE_REJECTED"),
         ({"status": "no_agent_found", "failure_reason": "no_skill_match"}, "TASK_STATE_FAILED"),
         ({"status": "failed"}, "TASK_STATE_FAILED"),
     ],

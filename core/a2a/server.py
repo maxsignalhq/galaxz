@@ -20,6 +20,8 @@ from core.jobs.repository import InvalidJobState
 
 MAX_BODY_BYTES = 1_000_000
 _DEFAULT_THRESHOLD = 0.65
+# Andromeda failure reasons meaning "this caller may not run this", not "it broke".
+_REJECTION_REASONS = frozenset({"origin_not_allowed", "policy_denied"})
 
 
 def _extract_call(message: dict) -> tuple[str, dict]:
@@ -75,8 +77,8 @@ def _map_job(job, result: dict | None) -> tuple[str, str | None, list[dict]]:
         return p.STATE_COMPLETED, None, [_artifact(result)]
     if outcome == "escalated":
         return p.STATE_INPUT_REQUIRED, "awaiting human review", []
-    if outcome == "no_agent_found" and result.get("failure_reason") == "origin_not_allowed":
-        return p.STATE_REJECTED, "origin not allowed for this skill", []
+    if outcome == "no_agent_found" and result.get("failure_reason") in _REJECTION_REASONS:
+        return p.STATE_REJECTED, "not permitted for this caller", []
     return p.STATE_FAILED, str((result or {}).get("failure_reason") or outcome or "task failed"), []
 
 
