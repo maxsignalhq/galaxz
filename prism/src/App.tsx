@@ -12,6 +12,8 @@ import { Settings }       from './pages/Settings';
 import { Artifacts }      from './pages/Artifacts';
 import { Goals }          from './pages/Goals';
 import { Catalog }        from './pages/Catalog';
+import { Agents }         from './pages/Agents';
+import { Memory }         from './pages/Memory';
 
 export default function App() {
   return (
@@ -25,6 +27,8 @@ export default function App() {
       <Route path="/artifacts"    element={<Artifacts />} />
       <Route path="/goals"        element={<Goals />} />
       <Route path="/catalog"      element={<Catalog />} />
+      <Route path="/agents"       element={<Agents />} />
+      <Route path="/memory"       element={<Memory />} />
       <Route path="/orion"        element={<OrionAnalytics />} />
       <Route path="/settings"     element={<Settings />} />
       <Route path="*"             element={<Navigate to="/" replace />} />
