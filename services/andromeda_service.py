@@ -52,6 +52,13 @@ def _read_workspace_path() -> str:
     return config.workspace_root if config.enabled else ""
 
 
+def _workspace_display_path(path: str) -> str:
+    mounted_host = os.environ.get("GALAXZ_WORKSPACE_HOST_PATH", "")
+    if path and mounted_host and Path(path).is_relative_to("/workspace"):
+        return str(Path(mounted_host) / Path(path).relative_to("/workspace"))
+    return path
+
+
 def _workspace_path_for_container(host_path: str) -> str:
     """Map a configured host path to the stable container workspace mount."""
     from pathlib import Path as _Path
@@ -357,7 +364,8 @@ def _task_text_with_session_context(
     return (
         "This request is part of an existing Task UI session. Continue the same task unless "
         "the current user message explicitly starts a new one. Use the prior user request "
-        "and prior agent output as the subject of revision, redo, threshold, or follow-up requests.\n\n"
+        "and prior agent output as context for revision, redo, threshold, or follow-up requests. "
+        "The current user message is authoritative for the requested operation, values, and output.\n\n"
         f"Current user message:\n{task_text.strip()}\n\n"
         f"Prior Task UI session context:\n{formatted_context}"
     )
@@ -647,7 +655,10 @@ def post_task(req: TaskRequest):
             file_results = []
 
     artifacts_in_response = (
-        file_results
+        [
+            {**artifact, **saved, "path": _workspace_display_path(saved["path"])}
+            for artifact, saved in zip(state["artifacts"], file_results)
+        ]
         if ran_file_write
         else [{**a, "written": False} for a in state.get("artifacts", [])]
     )
@@ -655,7 +666,7 @@ def post_task(req: TaskRequest):
     return {
         **state,
         "artifacts": artifacts_in_response,
-        "workspace_path": workspace_path or None,
+        "workspace_path": _workspace_display_path(workspace_path) or None,
         "confidence_breakdown": state.get("confidence_breakdown") or {},
         "gaps": state.get("gaps") or [],
         "summary": state.get("summary") or "",
@@ -928,6 +939,13 @@ def create_goal(req: GoalRequest):
         objective=req.objective,
         confidence_threshold=req.confidence_threshold,
     )
+    workspace = _read_workspace_path()
+    if workspace:
+        import re
+        slug = "-".join(re.findall(r"[a-z0-9]+", goal.objective.lower())[:8]) or "goal"
+        goal = goal.model_copy(update={
+            "workspace_root": str(Path(workspace) / f"{slug}-{str(goal.goal_id)[:8]}")
+        })
     _andromeda.goal_store.create_goal(goal)
     if req.repository_id:
         try:
@@ -965,6 +983,7 @@ def create_goal(req: GoalRequest):
     tree = _andromeda.goal_store.goal_tree(goal.goal_id)
     tree["repository"] = _andromeda.goal_store.repository_binding(goal.goal_id)
     tree["plan_pending_review"] = gated
+    tree["workspace_path"] = _workspace_display_path(goal.workspace_root or "") or None
     return tree
 
 
@@ -993,6 +1012,8 @@ def get_goal(goal_id: str):
     if _andromeda.goal_store.get_goal(gid) is None:
         raise HTTPException(status_code=404, detail="goal not found")
     tree = _andromeda.goal_store.goal_tree(gid)
+    goal = _andromeda.goal_store.get_goal(gid)
+    tree["workspace_path"] = _workspace_display_path(goal.workspace_root or "") or None
     tree["rollup"] = _andromeda.goal_store.rollup(gid)
     tree["events"] = _andromeda.goal_store.events(gid)
     tree["repository"] = _andromeda.goal_store.repository_binding(gid)
@@ -1522,10 +1543,7 @@ def get_config():
         data = _yaml.safe_load(f)
     llm = data.get("llm", {})
     workspace = _read_workspace_path()
-    mounted_host = os.environ.get("GALAXZ_WORKSPACE_HOST_PATH", "")
-    workspace_display = workspace
-    if workspace and mounted_host and Path(workspace).is_relative_to("/workspace"):
-        workspace_display = str(Path(mounted_host) / Path(workspace).relative_to("/workspace"))
+    workspace_display = _workspace_display_path(workspace)
     return {
         "provider":    _resolve(llm.get("provider", "")),
         "model":       _resolve(llm.get("model", "")),

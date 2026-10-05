@@ -13,6 +13,8 @@ def registry(tmp_path):
         skills=[
             SkillDefinition(skill_id="rigel.skill.code_generation", description="gen code", input_schema={}, output_schema={}),
             SkillDefinition(skill_id="rigel.skill.test_writing", description="write tests", input_schema={}, output_schema={}),
+            SkillDefinition(skill_id="rigel.skill.scaffold", description="create project files",
+                            input_schema={"required": ["project_type", "stack"]}, output_schema={}),
         ],
         health_endpoint="/health",
     ))
@@ -52,6 +54,40 @@ def test_plan_rejects_unknown_skill(registry):
         "tasks": [{"skill": "nope.skill.unknown", "payload": {}, "depends_on": []}]}]}
     with pytest.raises(PlanValidationError):
         _planner(registry, payload).plan(_goal())
+
+
+def test_plan_corrects_unambiguous_wrong_agent_prefix(registry):
+    payload = {"projects": [{"title": "Echo webpage", "tasks": [{
+        "skill": "vega.skill.scaffold", "payload": {"project_type": "webpage", "stack": "HTML CSS JavaScript"},
+    }]}]}
+    assert _planner(registry, payload).plan(_goal()).tasks[0].skill == "rigel.skill.scaffold"
+
+
+def test_standalone_webpage_and_readme_are_one_generation_task(registry):
+    goal = GoalContract(origin="test", confidence_threshold=0.65, objective=(
+        "A webpage with a text box and a button. When user enters something in text box "
+        "and click button the output need to be same text entered in text box. "
+        "add a readme.md as well there."
+    ))
+    def unexpected_llm(*args, **kwargs):
+        pytest.fail("A standalone webpage should use the registered scaffold directly")
+    result = GoalPlanner(registry, llm=unexpected_llm).plan(goal)
+    assert len(result.tasks) == 1
+    assert result.tasks[0].skill == "rigel.skill.scaffold"
+    assert result.tasks[0].payload["features"] == [goal.objective]
+
+
+def test_plan_repairs_missing_required_payload(registry):
+    calls = []
+    def llm(messages, config, system_prompt=""):
+        calls.append(messages)
+        payload = {} if len(calls) == 1 else {"project_type": "webpage", "stack": "HTML"}
+        return json.dumps({"projects": [{"title": "page", "tasks": [
+            {"skill": "rigel.skill.scaffold", "payload": payload}
+        ]}]}), 0, 0
+    result = GoalPlanner(registry, llm=llm, config_loader=lambda: object()).plan(_goal())
+    assert result.tasks[0].payload["stack"] == "HTML"
+    assert len(calls) == 2
 
 
 def test_plan_rejects_out_of_range_dependency(registry):

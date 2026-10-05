@@ -7,6 +7,13 @@ from agents.rigel.config import RigelConfig
 from core.artifacts.store import ArtifactStore
 from core.contracts import SkillDefinition, SkillManifest
 from core.pulsar.registry import PulsarRegistry
+from workspace.config import WorkspaceConfig
+
+
+@pytest.fixture(autouse=True)
+def isolated_workspace(monkeypatch):
+    monkeypatch.setattr("agents.andromeda.orchestrator.load_workspace_config",
+                        lambda: WorkspaceConfig(enabled=False, workspace_root=""))
 
 
 @pytest.fixture

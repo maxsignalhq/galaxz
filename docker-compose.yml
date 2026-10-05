@@ -1,15 +1,19 @@
 services:
   aether:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
   pulsar:
     build: .
     image: galaxz:latest
     depends_on:
-      - aether
+      aether:
+        condition: service_healthy
     env_file:
       - .env
     volumes:
@@ -31,8 +35,10 @@ services:
     build: .
     image: galaxz:latest
     depends_on:
-      - aether
-      - pulsar
+      aether:
+        condition: service_healthy
+      pulsar:
+        condition: service_healthy
     env_file:
       - .env
     volumes:
@@ -54,11 +60,16 @@ services:
     build: .
     image: galaxz:latest
     depends_on:
-      - aether
-      - pulsar
+      aether:
+        condition: service_healthy
+      pulsar:
+        condition: service_healthy
     env_file:
       - .env
     environment:
+      # Generation-only by default. Code execution is an explicit opt-in
+      # capability handled by a separate skill/runtime.
+      RIGEL_EXECUTION_CALIBRATION_ENABLED: "false"
       RIGEL_CONFIDENCE_COMPLETION_THRESHOLD: "0.65"
       RIGEL_CONFIDENCE_FAILURE_THRESHOLD: "0.40"
       RIGEL_CONFIDENCE_PARSE_ERROR_FALLBACK: "0.75"
@@ -77,11 +88,16 @@ services:
     build: .
     image: galaxz:latest
     depends_on:
-      - aether
-      - pulsar
+      aether:
+        condition: service_healthy
+      pulsar:
+        condition: service_healthy
     env_file:
       - .env
     environment:
+      # Generation-only by default. Code execution is an explicit opt-in
+      # capability handled by a separate skill/runtime.
+      RIGEL_EXECUTION_CALIBRATION_ENABLED: "false"
       RIGEL_CONFIDENCE_COMPLETION_THRESHOLD: "0.65"
       RIGEL_CONFIDENCE_FAILURE_THRESHOLD: "0.40"
       RIGEL_CONFIDENCE_PARSE_ERROR_FALLBACK: "0.75"
@@ -90,6 +106,9 @@ services:
       REVIEW_DB_PATH: /var/lib/galaxz/reviews.db
       ARTIFACT_DB_PATH: /var/lib/galaxz/artifacts.db
       NEBULA_DB_PATH: /var/lib/galaxz/nebula.db
+      GALAXZ_WORKSPACE_ROOT: /workspace
+      GALAXZ_WORKSPACE_ENABLED: "true"
+      GALAXZ_WORKSPACE_HOST_PATH: ${GALAXZ_WORKSPACE_HOST_PATH:-.}
     ports:
       - "8001:8001"
     volumes:
@@ -97,7 +116,10 @@ services:
       - ./orion/config:/app/orion/config
       - ./orion/data:/app/orion/data
       - ./agents:/app/agents
+      - ${GALAXZ_WORKSPACE_HOST_PATH:-.}:/workspace
       - job-data:/var/lib/galaxz
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: python -u services/andromeda_service.py
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
@@ -109,17 +131,26 @@ services:
     build: .
     image: galaxz:latest
     depends_on:
-      - aether
-      - pulsar
-      - galaxz
+      aether:
+        condition: service_healthy
+      pulsar:
+        condition: service_healthy
+      galaxz:
+        condition: service_healthy
     env_file:
       - .env
     environment:
+      # Generation-only by default. Code execution is an explicit opt-in
+      # capability handled by a separate skill/runtime.
+      RIGEL_EXECUTION_CALIBRATION_ENABLED: "false"
       JOB_DB_PATH: /var/lib/galaxz/jobs.db
       GOAL_DB_PATH: /var/lib/galaxz/goals.db
       REVIEW_DB_PATH: /var/lib/galaxz/reviews.db
       ARTIFACT_DB_PATH: /var/lib/galaxz/artifacts.db
       NEBULA_DB_PATH: /var/lib/galaxz/nebula.db
+      GALAXZ_WORKSPACE_ROOT: /workspace
+      GALAXZ_WORKSPACE_ENABLED: "true"
+      GALAXZ_WORKSPACE_HOST_PATH: ${GALAXZ_WORKSPACE_HOST_PATH:-.}
       WORKER_CONCURRENCY: "1"
       WORKER_LEASE_SECONDS: "30"
       WORKER_HEARTBEAT_SECONDS: "10"
@@ -128,7 +159,10 @@ services:
       - ./orion/config:/app/orion/config
       - ./orion/data:/app/orion/data
       - ./agents:/app/agents
+      - ${GALAXZ_WORKSPACE_HOST_PATH:-.}:/workspace
       - job-data:/var/lib/galaxz
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: python -u services/worker_service.py
     restart: unless-stopped
 
@@ -136,7 +170,8 @@ services:
     build: ./prism
     image: galaxz-prism:latest
     depends_on:
-      - galaxz
+      galaxz:
+        condition: service_healthy
     env_file:
       - .env
     environment:

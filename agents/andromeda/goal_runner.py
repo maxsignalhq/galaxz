@@ -60,6 +60,7 @@ class GoalRunner:
                 skill=task.skill,
                 payload=task.payload,
                 confidence_threshold=threshold,
+                workspace_root=goal.workspace_root,
             )
             result = self._andromeda.route(task=contract)
             status = result.get("status")

@@ -126,6 +126,7 @@ class DurableGoalCoordinator:
                 skill=task.skill,
                 payload=payload,
                 confidence_threshold=goal.confidence_threshold,
+                workspace_root=goal.workspace_root,
             )
             job = self.jobs.enqueue(
                 task_id=contract.task_id,
@@ -208,6 +209,7 @@ class DurableGoalCoordinator:
             skill=task.skill,
             payload=payload,
             confidence_threshold=self.store.get_goal(goal_id).confidence_threshold,
+            workspace_root=self.store.get_goal(goal_id).workspace_root,
         )
         job = self.jobs.enqueue(
             task_id=task.task_id,
