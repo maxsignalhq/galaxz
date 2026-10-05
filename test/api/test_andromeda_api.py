@@ -7,6 +7,7 @@ AUTH_HEADERS = {"Authorization": "Bearer test-key"}
 
 def _reset_auth(monkeypatch) -> None:
     monkeypatch.setenv("GALAXZ_API_KEY", "test-key")
+    monkeypatch.setattr(andromeda_service, "_read_workspace_path", lambda: "")
     andromeda_service.app.middleware_stack = None
 
 
@@ -167,6 +168,7 @@ def test_task_endpoint_normalizes_rigel_skill_and_routes_payload(monkeypatch):
 
 
 def test_task_endpoint_allows_requests_when_authentication_is_disabled(monkeypatch):
+    monkeypatch.setattr(andromeda_service, "_read_workspace_path", lambda: "")
     monkeypatch.delenv("GALAXZ_API_KEY", raising=False)
     andromeda_service.app.middleware_stack = None
     fake = FakeAndromeda()

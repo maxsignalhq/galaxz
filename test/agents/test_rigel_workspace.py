@@ -31,9 +31,9 @@ def test_rigel_writes_artifact_to_disk_when_workspace_root_set(rigel, tmp_path):
     wa = result["written_artifacts"][0]
     assert wa["absolute_path"]
     assert Path(wa["absolute_path"]).exists()
-    assert wa["filename"] == "output.py"
+    assert wa["filename"] == "add.py"
     assert Path(wa["absolute_path"]).read_text().endswith("\n")
-    assert sorted(path.name for path in tmp_path.iterdir() if path.suffix == ".py") == ["output.py"]
+    assert sorted(path.name for path in tmp_path.iterdir() if path.suffix == ".py") == ["add.py"]
     # in-memory artifacts unchanged
     assert len(result["artifacts"]) >= 1
     assert result["artifacts"][0]["content"]
@@ -48,6 +48,26 @@ def test_rigel_written_artifacts_empty_when_no_workspace_root(rigel, tmp_path):
     assert result["written_artifacts"] == []
     # artifacts still present in-memory
     assert len(result["artifacts"]) >= 1
+
+
+def test_semantic_filename_is_used_for_artifact_and_workspace(rigel, tmp_path):
+    rigel.llm = lambda **kwargs: json.dumps({
+        "filename": "temperature_converter.py", "code": "def celsius_to_fahrenheit(c):\n    return c * 9 / 5 + 32\n",
+    })
+    result = rigel.run("rigel.skill.code_generation", {"spec": "convert temperatures"},
+                       context={"workspace_root": str(tmp_path)})
+    assert result["artifacts"][0]["filename"] == "temperature_converter.py"
+    assert (tmp_path / "temperature_converter.py").read_text() == result["code"]
+    assert not (tmp_path / "output.py").exists()
+
+
+def test_generated_filename_cannot_escape_workspace(rigel, tmp_path):
+    rigel.llm = lambda **kwargs: json.dumps({"filename": "../escape.py", "code": "x = 1"})
+    from core.security.artifact_scan import ArtifactSafetyError
+    with pytest.raises((ArtifactSafetyError, ValueError)):
+        rigel.run("rigel.skill.code_generation", {"spec": "generate"},
+                  context={"workspace_root": str(tmp_path)})
+    assert not (tmp_path.parent / "escape.py").exists()
 
 
 @pytest.mark.parametrize("filename,code", [

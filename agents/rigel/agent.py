@@ -235,10 +235,8 @@ class RigelAgent:
             writer = FileWriter(workspace_root)
             for artifact in normalized["artifacts"]:
                 if skill_name == "code_generation":
-                    # Code generation has a stable contract.  Do not derive a
-                    # filename from the context-enriched prompt; that caused
-                    # files such as request_part_existing_task_ui_session_co.py
-                    # to be created from Task UI history.
+                    # Use the skill's semantic filename, with explicit caller
+                    # paths taking precedence over the generated name.
                     filename = context.get("output_path") or artifact["filename"]
                 elif len(normalized["artifacts"]) == 1:
                     filename = context.get("output_path") or writer.infer_filename(
@@ -389,7 +387,7 @@ def _normalize_skill_output(skill_name: str, raw_result: dict) -> dict:
             content += "\n"
         return {
             "artifacts": [{
-                "filename": "output.py",
+                "filename": raw_result.get("filename", "output.py"),
                 "content": content,
                 "language": raw_result.get("language", "python"),
                 "artifact_type": "code",

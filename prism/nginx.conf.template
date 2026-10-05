@@ -18,5 +18,12 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header Authorization "Bearer ${GALAXZ_API_KEY}";
+
+        # Task execution includes one or more LLM calls. The provider timeout is
+        # 180s, and the Task UI's code -> QA auto-route can make two calls in
+        # sequence. Keep nginx from returning a gateway 504 first.
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 420s;
     }
 }

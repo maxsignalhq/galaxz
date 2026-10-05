@@ -1,6 +1,6 @@
 llm:
-  provider: anthropic
-  model: ${ANTHROPIC_MODEL}
-  api_key: ${ANTHROPIC_AUTH_TOKEN}
-  base_url: ${ANTHROPIC_BASE_URL}
-workspace_path: ""
+  api_key: ${LLM_API_KEY:-}
+  base_url: http://localhost:11434
+  model: ${LLM_MODEL:-qwen3:1.7b}
+  provider: ${LLM_PROVIDER:-ollama}
+workspace_path: ''

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from core.contracts import GoalContract, PlannedTask, ProjectNode
@@ -14,7 +15,11 @@ _SYSTEM_PROMPT = (
     "keys only when useful) - do not invent or rename keys. Express ordering with "
     "`depends_on`: a list of integer indices into the "
     "flattened task list (projects in order, tasks in order within each project). "
-    "Keep the plan minimal - no speculative work. Respond with ONLY a JSON object:\n"
+    "Keep the plan minimal - no speculative work. For a small webpage or project with "
+    "multiple files, use one registered scaffold task with all requested files and "
+    "behaviors in its features, including documentation. Generation does not require "
+    "execution or QA tasks unless requested. Copy skill IDs exactly from the registry. "
+    "Respond with ONLY a JSON object:\n"
     '{"plan_confidence": <0..1>, "projects": [{"title": str, "description": str, '
     '"tasks": [{"skill": str, "payload": object, "depends_on": [int]}]}]}'
 )
@@ -67,13 +72,37 @@ class GoalPlanner:
         return {s.skill_id for s in self._registry.get_all_skills()}
 
     def plan(self, goal: GoalContract) -> PlanResult:
+        # A standalone webpage is one scaffold deliverable, including its
+        # scripts and documentation. Keep this common case atomic so an LLM
+        # cannot split connected files into unrelated component/QA tasks.
+        if (
+            "rigel.skill.scaffold" in self._known_skills()
+            and re.search(r"\bweb\s?page\b", goal.objective, re.I)
+            and not re.search(r"\b(api|backend|database|authentication|deploy|test|tests|audit|react|vue|angular|django|flask|next\.js)\b", goal.objective, re.I)
+        ):
+            project = ProjectNode(goal_id=goal.goal_id, title="Webpage", description=goal.objective)
+            task = PlannedTask(
+                goal_id=goal.goal_id, project_id=project.project_id, skill="rigel.skill.scaffold",
+                payload={"project_type": "standalone webpage", "stack": "HTML, CSS and JavaScript",
+                         "features": [goal.objective]},
+            )
+            return PlanResult(projects=[project], tasks=[task], plan_confidence=1.0)
+        try:
+            return self._plan_once(goal)
+        except PlanValidationError as exc:
+            return self._plan_once(goal, correction=str(exc))
+
+    def _plan_once(self, goal: GoalContract, correction: str = "") -> PlanResult:
         known = self._known_skills()
+        schemas = {s.skill_id: s.input_schema for s in self._registry.get_all_skills()}
         skill_hint = "\n".join(
             f"- {s.skill_id}: {s.description}"
             + (f"  payload={json.dumps(s.input_schema)}" if s.input_schema else "")
             for s in self._registry.get_all_skills()
         )
         user_msg = f"Objective:\n{goal.objective}\n\nRegistered skills:\n{skill_hint}"
+        if correction:
+            user_msg += f"\n\nYour previous plan was invalid: {correction}. Return a corrected complete plan."
         config = self._config_loader()
         raw, _, _ = self._llm(
             [{"role": "user", "content": user_msg}], config, system_prompt=_SYSTEM_PROMPT
@@ -83,6 +112,8 @@ class GoalPlanner:
         except json.JSONDecodeError as e:
             raise PlanValidationError(f"planner returned non-JSON: {e}") from e
 
+        if not isinstance(data, dict):
+            raise PlanValidationError("plan must be a JSON object")
         raw_projects = data.get("projects")
         if not isinstance(raw_projects, list) or not raw_projects:
             raise PlanValidationError("plan has no projects")
@@ -119,7 +150,17 @@ class GoalPlanner:
         edges: dict[int, list[int]] = {}
         for i, spec in enumerate(flat_specs):
             if spec["skill"] not in known:
-                raise PlanValidationError(f"unknown skill: {spec['skill']!r}")
+                # Correct an invented agent prefix only when the capability is
+                # unambiguous. Never dispatch an unknown or ambiguous skill.
+                suffix = str(spec["skill"]).split(".skill.")[-1]
+                matches = [skill for skill in known if skill.endswith(".skill." + suffix)]
+                if len(matches) != 1:
+                    raise PlanValidationError(f"unknown skill: {spec['skill']!r}")
+                spec["skill"] = matches[0]
+            payload = spec["payload"]
+            required = (schemas.get(spec["skill"]) or {}).get("required", [])
+            if not isinstance(payload, dict) or any(key not in payload for key in required):
+                raise PlanValidationError(f"task {i} payload for {spec['skill']} requires {required}")
             deps = spec["depends_on"]
             if not isinstance(deps, list) or any(
                 not isinstance(d, int) or d < 0 or d >= n or d == i for d in deps

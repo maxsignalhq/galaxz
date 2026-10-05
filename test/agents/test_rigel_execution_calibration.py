@@ -253,11 +253,43 @@ def test_workspace_sandbox_failure_never_launches_local_python(
     assert result["failure_reason"] == "execution_sandbox_unavailable"
 
 
+def test_generation_only_completes_and_writes_to_selected_workspace(tmp_path, monkeypatch, rigel_codegen_llm):
+    from agents.andromeda.orchestrator import Andromeda
+    from agents.andromeda.task_log import TaskLog
+    from core.artifacts.store import ArtifactStore
+    from core.contracts import TaskContract
+    from workspace.config import WorkspaceConfig
+
+    monkeypatch.setattr("agents.andromeda.orchestrator.load_workspace_config",
+                        lambda: WorkspaceConfig(enabled=True, workspace_root=str(tmp_path)))
+    registry = PulsarRegistry(db_path=str(tmp_path / "registry.db"))
+    agent, _ = _build_agent(registry, monkeypatch, rigel_codegen_llm, execution_enabled=False)
+
+    def unexpected_execution(*args, **kwargs):
+        pytest.fail("Generation-only tasks must never execute generated code")
+
+    monkeypatch.setattr("agents.rigel.agent.execute_generated_output", unexpected_execution)
+    router = Andromeda(registry, TaskLog(str(tmp_path / "tasks.db")), agents={"rigel": agent},
+                       artifact_store=ArtifactStore(str(tmp_path / "artifacts.db")))
+    result = router.route(task=TaskContract(
+        origin="test", skill="rigel.skill.code_generation", confidence_threshold=0.65,
+        payload={"spec": "add"},
+    ))
+    assert result["status"] == "complete"
+    assert result["execution_result"] is None
+    assert result["externally_calibrated"] is False
+    assert (tmp_path / "add.py").read_text() == "def add(a, b):\n    return a + b\n"
+
+
 def test_router_cannot_complete_unavailable_sandbox_with_low_threshold(tmp_path, monkeypatch, rigel_codegen_llm):
     from agents.andromeda.orchestrator import Andromeda
     from agents.andromeda.task_log import TaskLog
     from core.artifacts.store import ArtifactStore
     from core.contracts import TaskContract
+    from workspace.config import WorkspaceConfig
+
+    monkeypatch.setattr("agents.andromeda.orchestrator.load_workspace_config",
+                        lambda: WorkspaceConfig(enabled=False, workspace_root=""))
 
     registry = PulsarRegistry(db_path=str(tmp_path / "registry.db"))
     agent, _ = _build_agent(registry, monkeypatch, rigel_codegen_llm)

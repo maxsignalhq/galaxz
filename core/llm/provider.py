@@ -1,11 +1,15 @@
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from concurrent.futures import TimeoutError
 from dataclasses import dataclass
 from typing import Optional
 
 import litellm
 import yaml
+
+from core.llm.limiter import ProviderLimiter
+
+_limiter = ProviderLimiter()
 
 
 @dataclass
@@ -14,10 +18,22 @@ class ProviderConfig:
     model: str
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    max_concurrent: Optional[int] = None
+
+
+def effective_max_concurrent(config: ProviderConfig) -> int:
+    if config.max_concurrent is not None:
+        return config.max_concurrent
+    return 1 if config.provider == "ollama" else 4
 
 
 def _resolve_env_vars(value: str) -> str:
-    return re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), m.group(0)), value)
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1)
+        default = match.group(2)
+        return os.environ.get(name, default if default is not None else match.group(0))
+
+    return re.sub(r"\$\{(\w+)(?::-([^}]*))?\}", replace, value)
 
 
 def load_provider_config(config_path: str = "config/providers.yaml") -> ProviderConfig:
@@ -40,11 +56,22 @@ def load_provider_config(config_path: str = "config/providers.yaml") -> Provider
     api_key = llm.get("api_key")
     base_url = llm.get("base_url")
 
+    max_concurrent = None
+    raw_cap = os.environ.get("LLM_MAX_CONCURRENT") or llm.get("max_concurrent")
+    if raw_cap is not None and str(raw_cap).strip():
+        try:
+            max_concurrent = int(str(raw_cap))
+        except ValueError:
+            max_concurrent = 0
+        if max_concurrent < 1:
+            raise ValueError("max_concurrent must be an integer >= 1")
+
     return ProviderConfig(
         provider=_resolve_env_vars(provider),
         model=_resolve_env_vars(model),
         api_key=_resolve_env_vars(api_key) if api_key else None,
         base_url=_resolve_env_vars(base_url) if base_url else None,
+        max_concurrent=max_concurrent,
     )
 
 
@@ -92,17 +119,18 @@ def call_llm(
     if config.base_url:
         kwargs["base_url"] = config.base_url
 
-    executor = ThreadPoolExecutor(max_workers=1)
+    queue_timeout_s = float(os.environ.get("LLM_QUEUE_TIMEOUT_SECONDS", "120"))
+    key = f"{config.provider}/{config.model}@{config.base_url or ''}"
+    future = _limiter.submit(
+        key, effective_max_concurrent(config), queue_timeout_s, litellm.completion, **kwargs
+    )
     try:
-        future = executor.submit(litellm.completion, **kwargs)
         response = future.result(timeout=timeout_s)
     except TimeoutError as e:
         future.cancel()
         raise RuntimeError(f"LLM call timed out after {timeout_s:.1f} seconds") from e
     except Exception as e:
         raise RuntimeError(f"LLM call failed: {e}") from e
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
 
     text = response.choices[0].message.content
     prompt_tokens = response.usage.prompt_tokens

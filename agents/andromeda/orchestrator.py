@@ -289,12 +289,7 @@ class Andromeda:
             # artifact has been executed successfully.  Previously an
             # unavailable Docker sandbox was treated as a warning and the
             # LLM's self-confidence could still produce a false completion.
-            if result.get("failure_reason") == "execution_sandbox_unavailable" or (
-                skill_id == "rigel.skill.code_generation"
-                and result.get("writable")
-                and result.get("written_artifacts")
-                and result.get("execution_result") is None
-            ):
+            if result.get("failure_reason") == "execution_sandbox_unavailable":
                 return {
                     "result": result,
                     "artifacts": result.get("artifacts", []),
@@ -354,9 +349,18 @@ class Andromeda:
 
         # API and worker processes see settings changes on the next task.
         ws = load_workspace_config()
-        if ws.enabled:
-            task = task.model_copy(update={"workspace_root": ws.workspace_root})
-            context_update = {"workspace_root": ws.workspace_root}
+        workspace_root = ws.workspace_root if ws.enabled else None
+        if task.origin.startswith("goal:"):
+            goal = self.goal_store.get_goal(uuid.UUID(task.origin.removeprefix("goal:")))
+            if goal and goal.workspace_root:
+                workspace_root = goal.workspace_root
+            elif workspace_root:
+                workspace_root = str(Path(workspace_root) / f"goal-{task.origin.removeprefix('goal:')}")
+            if workspace_root:
+                Path(workspace_root).mkdir(parents=True, exist_ok=True)
+        if workspace_root:
+            task = task.model_copy(update={"workspace_root": workspace_root})
+            context_update = {"workspace_root": workspace_root}
             if task.output_path is not None:
                 context_update["output_path"] = task.output_path
             context = {**(context or {}), **context_update}

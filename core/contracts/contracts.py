@@ -167,6 +167,7 @@ class GoalContract(BaseModel):
     goal_id: UUID = Field(default_factory=uuid4)
     origin: str
     objective: str
+    workspace_root: str | None = None  # dedicated goal folder, pinned when created
     confidence_threshold: float = Field(ge=0.0, le=1.0)
     status: GoalStatus = "planning"
     plan_confidence: float | None = Field(default=None, ge=0.0, le=1.0)

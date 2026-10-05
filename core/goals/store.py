@@ -91,6 +91,9 @@ class GoalStore:
             self._conn.execute(
                 "ALTER TABLE planned_tasks ADD COLUMN resolved_payload_json TEXT"
             )
+        goal_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(goals)")}
+        if "workspace_root" not in goal_columns:
+            self._conn.execute("ALTER TABLE goals ADD COLUMN workspace_root TEXT")
         self._conn.commit()
 
     def bind_repository(self, goal_id: UUID, repository_id: str, base_revision: str, base_commit_sha: str) -> None:
@@ -108,11 +111,11 @@ class GoalStore:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO goals (goal_id, origin, objective, confidence_threshold, "
-                "status, plan_confidence, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "status, plan_confidence, created_at, workspace_root) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     str(goal.goal_id), goal.origin, goal.objective,
                     goal.confidence_threshold, goal.status, goal.plan_confidence,
-                    goal.created_at.isoformat(),
+                    goal.created_at.isoformat(), goal.workspace_root,
                 ),
             )
             self._conn.commit()
@@ -127,6 +130,7 @@ class GoalStore:
             goal_id=UUID(row["goal_id"]),
             origin=row["origin"],
             objective=row["objective"],
+            workspace_root=row["workspace_root"],
             confidence_threshold=row["confidence_threshold"],
             status=row["status"],
             plan_confidence=row["plan_confidence"],

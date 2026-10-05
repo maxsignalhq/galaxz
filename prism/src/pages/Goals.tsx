@@ -26,6 +26,7 @@ interface GoalTree {
   goal: { goal_id: string; objective: string; status: string; plan_confidence: number | null };
   projects: ProjectNode[];
   plan_pending_review?: boolean;
+  workspace_path?: string | null;
   rollup?: { completed: number; total: number; min_confidence: number | null };
   events?: Array<{ actor: string; action: string; reason: string | null; created_at: string }>;
 }
@@ -179,6 +180,11 @@ export function Goals() {
               )}
             </div>
 
+            {tree.workspace_path && (
+              <div style={{ fontFamily: mono, fontSize: 11, color: 'var(--t3)', marginBottom: 12 }}>
+                Files: {tree.workspace_path}
+              </div>
+            )}
             {tree.plan_pending_review && (
               <div style={{ fontFamily: mono, fontSize: 11, color: '#d29922', marginBottom: 12 }}>
                 Plan confidence below threshold — sent to the review queue. Approve it there, then Resume.

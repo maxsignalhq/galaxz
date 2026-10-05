@@ -55,5 +55,13 @@ def test_task_response_uses_workspace_snapshot_not_new_settings(settings_dir, mo
     })
     response = svc.post_task(svc.TaskRequest(task="generate", skill_id="code_generation"))
     assert response["workspace_path"] == str(old)
+    assert response["artifacts"][0]["content"] == "x = 1"
+    assert response["artifacts"][0]["written"] is True
     assert (old / "a.py").read_text() == "x = 1"
     assert not (new / "a.py").exists()
+
+
+def test_workspace_display_path_matches_host_mount(monkeypatch):
+    monkeypatch.setenv("GALAXZ_WORKSPACE_HOST_PATH", "/host/projects")
+    assert svc._workspace_display_path("/workspace/default_workspace/a.py") == "/host/projects/default_workspace/a.py"
+    assert svc._workspace_display_path("/workspace-other/a.py") == "/workspace-other/a.py"

@@ -4,7 +4,12 @@ import '../styles/landing.css';
 
 /* ── Static data ───────────────────────────────────────────── */
 
-const NAV_LINKS = ['Systems', 'How it works', 'Open source', 'Docs'];
+const NAV_LINKS = [
+  { label: 'Systems', href: '#systems' },
+  { label: 'How it works', href: '#how-it-works' },
+  { label: 'Open source', href: 'https://github.com/maxsignalhq/galaxz' },
+  { label: 'Docs', href: 'https://github.com/maxsignalhq/galaxz#quickstart' },
+];
 
 const FEATURES = [
   {
@@ -130,10 +135,27 @@ const AGENTS = [
 ] as const;
 
 const FOOTER_COLS = [
-  { label: 'Product',     links: ['Dashboard', 'Dev Console', 'Orion Analytics', 'Changelog'] },
-  { label: 'Docs',        links: ['Quickstart', 'Architecture', 'Agent API', 'Skill Contracts'] },
-  { label: 'Open Source', links: ['GitHub', 'Contributing', 'Roadmap', 'MIT License'] },
-  { label: 'Company',     links: ['About', 'Blog', 'Contact'] },
+  { label: 'Product', links: [
+    ['Dashboard', '/dashboard'], ['Dev Console', '/dev-console'], ['Orion Analytics', '/orion'],
+    ['Changelog', 'https://github.com/maxsignalhq/galaxz/blob/master/CHANGELOG.md'],
+  ] },
+  { label: 'Docs', links: [
+    ['Quickstart', 'https://github.com/maxsignalhq/galaxz#quickstart'],
+    ['Architecture', 'https://github.com/maxsignalhq/galaxz#system-overview'],
+    ['Agent API', 'https://github.com/maxsignalhq/galaxz#project-structure'],
+    ['Skill Contracts', 'https://github.com/maxsignalhq/galaxz#system-overview'],
+  ] },
+  { label: 'Open Source', links: [
+    ['GitHub', 'https://github.com/maxsignalhq/galaxz'],
+    ['Contributing', 'https://github.com/maxsignalhq/galaxz/blob/master/CONTRIBUTING.md'],
+    ['Roadmap', 'https://github.com/maxsignalhq/galaxz#production-roadmap'],
+    ['MIT License', 'https://github.com/maxsignalhq/galaxz/blob/master/LICENSE'],
+  ] },
+  { label: 'Company', links: [
+    ['About', 'https://github.com/maxsignalhq/galaxz'],
+    ['Blog', 'https://github.com/maxsignalhq/galaxz/discussions'],
+    ['Contact', 'https://github.com/maxsignalhq/galaxz/issues/new'],
+  ] },
 ] as const;
 
 /* ── Icons ─────────────────────────────────────────────────── */
@@ -181,15 +203,15 @@ export function Landing() {
 
       {/* ══ NAV ══════════════════════════════════════════════ */}
       <nav className="land-nav">
-        <a className="land-nav-logo" href="#">
+        <a className="land-nav-logo" href="/">
           <LiveDot />
           <span className="land-nav-logo-text">galaxz</span>
         </a>
 
         <div className="land-nav-links">
           {NAV_LINKS.map(link => (
-            <a key={link} className="land-nav-link" href="#">
-              {link}
+            <a key={link.label} className="land-nav-link" href={link.href}>
+              {link.label}
             </a>
           ))}
         </div>
@@ -319,7 +341,7 @@ export function Landing() {
       </div>
 
       {/* ══ HOW IT WORKS ═════════════════════════════════════ */}
-      <div className="section-wrap">
+      <div className="section-wrap" id="how-it-works">
         <span className="section-kicker">HOW IT WORKS</span>
         <h2 className="section-h2">
           From request to result.<br />Every step observable.
@@ -338,7 +360,7 @@ export function Landing() {
       </div>
 
       {/* ══ AGENTS ═══════════════════════════════════════════ */}
-      <div className="section-wrap">
+      <div className="section-wrap" id="systems">
         <span className="section-kicker">SYSTEMS</span>
         <h2 className="section-h2">
           Seven systems.<br />One architecture.
@@ -467,9 +489,9 @@ export function Landing() {
                 <span className="footer-col-label">{col.label}</span>
                 <ul className="footer-links">
                   {col.links.map(link => (
-                    <li key={link}>
-                      <a className="footer-link" href="#">
-                        {link}
+                    <li key={link[0]}>
+                      <a className="footer-link" href={link[1]}>
+                        {link[0]}
                       </a>
                     </li>
                   ))}

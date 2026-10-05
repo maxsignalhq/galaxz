@@ -485,6 +485,7 @@ function GeneralPanel({
               onChange={(e) => setGeneral('workspaceName', e.target.value)}
               placeholder="My Galaxz workspace"
             />
+            <span className="form-hint">Display name only. Files are saved in the workspace folder.</span>
           </div>
           <div className="form-field">
             <label className="form-label">Workspace folder</label>
@@ -885,7 +886,9 @@ export function Settings() {
                 <span className="save-bar-info">
                   {panel === 'models'
                     ? 'Model and base URL changes write to config/providers.yaml — restart agents to apply.'
-                    : 'Changes saved to browser local storage — no backend persistence for this panel yet.'}
+                    : panel === 'general'
+                      ? 'Workspace folder is saved on the server and applies to the next task. Other preferences are saved in this browser.'
+                      : 'Changes saved to browser local storage — no backend persistence for this panel yet.'}
                 </span>
                 <div className="save-bar-actions">
                   <button className="btn btn-ghost btn-sm" onClick={handleCancel}>Cancel</button>

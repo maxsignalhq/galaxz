@@ -57,6 +57,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("GALAXZ_API_KEY", "test-key")
     monkeypatch.setenv("JOB_DB_PATH", str(tmp_path / "jobs.db"))
     monkeypatch.setattr(svc, "_job_repository", None)
+    monkeypatch.setattr(svc, "_read_workspace_path", lambda: str(tmp_path))
     svc.app.middleware_stack = None
     a = _build_andromeda(tmp_path)
     monkeypatch.setattr(svc, "boot", lambda: a)
@@ -73,6 +74,21 @@ def test_post_goal_returns_202_and_tree(client):
     assert body["goal"]["objective"] == "build a todo API"
     assert len(body["projects"][0]["tasks"]) == 1
     assert body["plan_pending_review"] is False
+
+
+def test_goals_have_distinct_persisted_workspace_folders(client, tmp_path):
+    from pathlib import Path
+    from core.goals.store import GoalStore
+    first = client.post("/goals", json={"objective": "text echo webpage"}, headers=AUTH).json()
+    second = client.post("/goals", json={"objective": "text echo webpage"}, headers=AUTH).json()
+    assert first["workspace_path"] != second["workspace_path"]
+    assert Path(first["workspace_path"]).parent == tmp_path
+    gid = uuid.UUID(first["goal"]["goal_id"])
+    reopened = GoalStore(client._andromeda.goal_store.db_path)
+    assert reopened.get_goal(gid).workspace_root == first["workspace_path"]
+    task = client._andromeda.goal_store.get_tasks(gid)[0]
+    job_id = client._andromeda.goal_store.task_execution(task.task_id)["job_id"]
+    assert svc._jobs().get_task(uuid.UUID(job_id)).workspace_root == first["workspace_path"]
 
 
 def test_post_goal_low_plan_confidence_is_gated(client):
