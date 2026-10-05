@@ -79,12 +79,18 @@ class PulsarRegistry:
             self._agents[manifest.agent_id] = manifest
             self._store.register_agent(manifest.agent_id, manifest.model_dump(mode="json"))
 
-    def get_agents_for_skill(self, skill_id: str) -> list[SkillManifest]:
+    def get_agents_for_skill(
+        self, skill_id: str, origin: Optional[str] = None
+    ) -> list[SkillManifest]:
+        """Agents offering skill_id; with origin, only those whose skill permits it."""
         with self._lock:
             return [
                 agent
                 for agent in self._agents.values()
-                if any(skill.skill_id == skill_id for skill in agent.skills)
+                if any(
+                    skill.skill_id == skill_id and (origin is None or skill.permits(origin))
+                    for skill in agent.skills
+                )
             ]
 
     def get_agent(self, agent_id: str) -> Optional[SkillManifest]:

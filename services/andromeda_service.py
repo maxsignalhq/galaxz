@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -199,6 +199,18 @@ class ArtifactRollbackRequest(BaseModel):
     version: int
     project_id: str | None = None
     organization_id: str | None = None
+
+
+class MemoryRequest(BaseModel):
+    namespace: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    source_task_id: UUID | None = None
+
+
+class CatalogInstallRequest(BaseModel):
+    version: str | None = None
+    force: bool = False
 
 
 class GoalRequest(BaseModel):
@@ -742,6 +754,64 @@ def get_task_throughput(hours: int = 24):
     return _andromeda.task_log.throughput(hours)
 
 
+@app.post("/memory", status_code=201)
+def remember_memory(req: MemoryRequest):
+    try:
+        entry = _andromeda.nebula.remember(req.namespace, req.content, req.tags, req.source_task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return entry.model_dump(mode="json")
+
+
+@app.get("/memory")
+def recall_memory(namespace: str, q: str | None = None, limit: int = 5):
+    namespaces = [ns for ns in namespace.split(",") if ns]
+    entries = _andromeda.nebula.recall(namespaces, query=q, limit=max(1, min(limit, 50)))
+    return [e.model_dump(mode="json") for e in entries]
+
+
+@app.get("/quasar")
+def get_quasar_status():
+    quasar = getattr(_andromeda, "quasar", None)
+    if quasar is None:
+        return {"configured": False, "servers": []}
+    return quasar.status()
+
+
+@app.get("/memory/namespaces")
+def list_memory_namespaces():
+    return _andromeda.nebula.namespaces()
+
+
+@app.delete("/memory/{memory_id}")
+def forget_memory(memory_id: UUID):
+    if not _andromeda.nebula.forget(memory_id):
+        raise HTTPException(status_code=404, detail="memory not found")
+    return {"deleted": str(memory_id)}
+
+
+@app.get("/catalog")
+def list_catalog():
+    from core.constellation.catalog import Catalog
+
+    return Catalog().list()
+
+
+@app.post("/catalog/{agent_id}/install")
+def install_catalog_agent(agent_id: str, req: CatalogInstallRequest | None = None):
+    from core.constellation.catalog import Catalog, CatalogConflict, CatalogError, CatalogNotFound
+
+    req = req or CatalogInstallRequest()
+    try:
+        return Catalog().install(agent_id, version=req.version, force=req.force)
+    except CatalogNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CatalogConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CatalogError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get("/artifacts")
 def list_artifacts():
     return _andromeda.artifact_store.list_files()
@@ -815,8 +885,23 @@ def rollback_artifact(req: ArtifactRollbackRequest):
     return {"content": row["content"], "version": req.version, "written": written}
 
 
+def _feedback_task_id(queue_task_id: str, item: dict) -> UUID:
+    """FeedbackEvent needs a UUID; plan reviews are keyed 'plan:<goal_id>' in the queue."""
+    try:
+        return UUID(queue_task_id)
+    except ValueError:
+        if item.get("goal_id"):
+            return UUID(item["goal_id"])
+        return uuid5(NAMESPACE_URL, queue_task_id)
+
+
 def _resume_goal_from_review(queue_task_id: str, goal_id: str, approved: bool) -> None:
     gid = UUID(goal_id)
+    if _andromeda.goal_store.get_goal(gid) is None:
+        # Orphaned item (goal deleted or from another database): let the reviewer
+        # dismiss it instead of failing with a 500 after the item was resolved.
+        logger.warning("review item %s references missing goal %s; not resuming", queue_task_id, goal_id)
+        return
     if queue_task_id.startswith("plan:"):
         if approved:
             _goal_coordinator().start(gid, actor="review")
@@ -1149,7 +1234,7 @@ def approve_task(task_id: str, req: ResolveRequest = ResolveRequest()):
         _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
 
     event = FeedbackEvent(
-        task_id=task_id,
+        task_id=_feedback_task_id(task_id, item),
         task_category=item.get("task_type") or "unknown",
         agent_id="human_reviewer",
         outcome=OutcomeType.approved,
@@ -1180,7 +1265,7 @@ def accept_task(task_id: str, req: ResolveRequest = ResolveRequest()):
         _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
 
     event = FeedbackEvent(
-        task_id=task_id,
+        task_id=_feedback_task_id(task_id, item),
         task_category=item.get("task_type") or "unknown",
         agent_id="human_reviewer",
         outcome=OutcomeType.approved,
@@ -1211,7 +1296,7 @@ def reject_task(task_id: str, req: ResolveRequest = ResolveRequest()):
         _resume_goal_from_review(item["task_id"], item["goal_id"], approved=False)
 
     event = FeedbackEvent(
-        task_id=task_id,
+        task_id=_feedback_task_id(task_id, item),
         task_category=item.get("task_type") or "unknown",
         agent_id="human_reviewer",
         outcome=OutcomeType.failed,

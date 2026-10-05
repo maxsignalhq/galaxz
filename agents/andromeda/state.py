@@ -5,6 +5,7 @@ class AndromedaState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: str
+    origin: str | None = None
     task_type: str
     required_skills: list[str]
     priority: str

@@ -8,11 +8,18 @@ from dataclasses import dataclass
 
 
 SCANNER_NAME = "galaxz-artifact-scan"
-SCANNER_VERSION = "1.0"
+SCANNER_VERSION = "1.1"
+# A secret-like name assigned a hardcoded value. Code that merely *reads* a
+# secret (os.environ.get(...), generate_token(...), config.api_key) is not a leak.
+_SECRET_NAME = r"\b\w*(?:api[_-]?key|secret|password|passwd|token)\w*[\"']?\s*[:=]\s*"
+_QUOTED_LITERAL = r"(?:\"[^\s\"']{12,}\"|'[^\s\"']{12,}')"
+# Unquoted values (.env / YAML): long, token-like, containing a digit, and not
+# the start of a call, attribute or subscript.
+_BARE_LITERAL = r"(?<![\w.])(?=[A-Za-z0-9_\-+/=]*\d)[A-Za-z0-9_\-+/=]{16,}(?![\w(.\[])"
 _SECRET_RULES = (
     ("private-key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
     ("aws-access-key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-    ("generic-secret", re.compile(r"(?i)\b(?:api[_-]?key|secret|password|token)\s*[:=]\s*[\"']?[^\s\"']{12,}")),
+    ("generic-secret", re.compile(r"(?i)" + _SECRET_NAME + "(?:" + _QUOTED_LITERAL + "|" + _BARE_LITERAL + ")")),
 )
 _UNSAFE_EXTENSIONS = {".exe", ".dll", ".so", ".dylib", ".bin", ".pyc", ".zip", ".tar", ".gz", ".tgz", ".7z", ".rar", ".jar"}
 
@@ -47,7 +54,11 @@ class ArtifactScan:
 class ArtifactSafetyError(ValueError):
     def __init__(self, scan: ArtifactScan):
         self.scan = scan
-        super().__init__(f"artifact safety review required: {scan.status}")
+        # Rule and filename only; never the matched content.
+        detail = ", ".join(sorted({f"{f['rule']} in {f['filename']}" for f in scan.findings})[:5])
+        super().__init__(
+            f"artifact safety review required: {scan.status}" + (f" ({detail})" if detail else "")
+        )
 
 
 def require_safe_artifacts(artifacts: list[dict]) -> ArtifactScan:

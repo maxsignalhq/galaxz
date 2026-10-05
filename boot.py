@@ -10,6 +10,7 @@ from core.agent_loader import load_yaml_agents
 from core.artifacts.object_storage import object_storage_from_environment
 from core.artifacts.store import ArtifactStore
 from core.pulsar.registry import PulsarRegistry
+from core.quasar.agent import QuasarAgent, load_mcp_config
 from core.goals import PostgresGoalStore
 from core.storage import PostgresArtifactStore, PostgresReviewQueue, PostgresTaskLog
 from core.storage.manage import database_engine, require_current_schema
@@ -53,6 +54,9 @@ def boot(config_path: str = "config/providers.yaml") -> Andromeda:
     vega = VegaAgent(registry, config_path=config_path)
     vega.start()
     yaml_agents = load_yaml_agents(registry)
+    mcp_servers = load_mcp_config()
+    quasar = QuasarAgent(registry, mcp_servers)  # also clears a stale manifest when none are configured
+    quasar_agents = {quasar.AGENT_ID: quasar} if quasar.skill_ids else {}
     from orion import OrionService
     from orion.config import OrionConfig
     orion = OrionService(OrionConfig(), registry=registry)
@@ -68,12 +72,14 @@ def boot(config_path: str = "config/providers.yaml") -> Andromeda:
             rigel.AGENT_ID: rigel,
             vega.AGENT_ID: vega,
             **yaml_agents,
+            **quasar_agents,
         },
         review_queue=review_queue,
         artifact_store=artifact_store,
         goal_store=goal_store,
     )
     andromeda.orion = orion
+    andromeda.quasar = quasar  # kept even if every server failed, so /quasar can report why
     return andromeda
 
 

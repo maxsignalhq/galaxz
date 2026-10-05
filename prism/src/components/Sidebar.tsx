@@ -9,6 +9,9 @@ const NAV_ROUTES: Partial<Record<string, string>> = {
   'task-queue': '/task-queue',
   goals:        '/goals',
   artifacts:    '/artifacts',
+  catalog:      '/catalog',
+  agents:       '/agents',
+  memory:       '/memory',
   'dev-console':'/dev-console',
   'task-ui':    '/task-ui',
   'review-queue':'/review-queue',
@@ -24,6 +27,9 @@ type NavId =
   | 'task-queue'
   | 'goals'
   | 'artifacts'
+  | 'catalog'
+  | 'agents'
+  | 'memory'
   | 'dev-console'
   | 'task-ui'
   | 'review-queue'
@@ -128,6 +134,9 @@ function buildNavSections(pendingReviewCount: number | null): NavSection[] {
       { id: 'task-queue',   label: 'Task Queue',   icon: <IconList /> },
       { id: 'goals',        label: 'Goals',        icon: <IconActivity /> },
       { id: 'artifacts',    label: 'Artifacts',    icon: <IconFile /> },
+      { id: 'agents',       label: 'Agents & Tools', icon: <IconGrid /> },
+      { id: 'catalog',      label: 'Catalog',      icon: <IconUsers /> },
+      { id: 'memory',       label: 'Memory',       icon: <IconList /> },
     ],
   },
   {

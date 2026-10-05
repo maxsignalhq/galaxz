@@ -89,6 +89,7 @@ services:
       GOAL_DB_PATH: /var/lib/galaxz/goals.db
       REVIEW_DB_PATH: /var/lib/galaxz/reviews.db
       ARTIFACT_DB_PATH: /var/lib/galaxz/artifacts.db
+      NEBULA_DB_PATH: /var/lib/galaxz/nebula.db
     ports:
       - "8001:8001"
     volumes:
@@ -118,6 +119,7 @@ services:
       GOAL_DB_PATH: /var/lib/galaxz/goals.db
       REVIEW_DB_PATH: /var/lib/galaxz/reviews.db
       ARTIFACT_DB_PATH: /var/lib/galaxz/artifacts.db
+      NEBULA_DB_PATH: /var/lib/galaxz/nebula.db
       WORKER_CONCURRENCY: "1"
       WORKER_LEASE_SECONDS: "30"
       WORKER_HEARTBEAT_SECONDS: "10"

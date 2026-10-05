@@ -1,0 +1,11 @@
+# Quasar: MCP servers whose tools become Pulsar skills named quasar.<name>.<tool>.
+# Tools are discovered at boot, so restart after editing. stdio servers only.
+# Servers run with Galaxz's privileges — list only servers you trust.
+#
+# servers:
+#   - name: fs
+#     command: [npx, -y, "@modelcontextprotocol/server-filesystem", /workspace]
+#     env: {}
+#     timeout_s: 30
+#     allowed_origins: ["goal:*"]   # optional; omit to allow any origin
+servers: []

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
+from fnmatch import fnmatchcase
 from typing import Literal, Optional
 from uuid import UUID, uuid4
 
@@ -40,6 +41,9 @@ class SkillDefinition(BaseModel):
     output_schema: dict
     avg_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     avg_latency_ms: int = Field(default=1000, ge=0)
+    # fnmatch patterns matched against TaskContract.origin. None = open to any
+    # origin; an empty list denies every origin.
+    allowed_origins: list[str] | None = None
 
     @field_validator("skill_id", "description")
     @classmethod
@@ -48,6 +52,11 @@ class SkillDefinition(BaseModel):
         if not value:
             raise ValueError("must not be empty")
         return value
+
+    def permits(self, origin: str) -> bool:
+        if self.allowed_origins is None:
+            return True
+        return any(fnmatchcase(origin, pattern) for pattern in self.allowed_origins)
 
 
 class SkillManifest(BaseModel):
@@ -198,3 +207,26 @@ class PlannedTask(BaseModel):
     confidence: float | None = None
     result: dict | None = None
     error: str | None = None
+
+
+class MemoryEntry(BaseModel):
+    """Nebula: one durable memory, scoped by a free-form namespace.
+
+    Namespaces are conventionally a TaskContract.origin (e.g. ``goal:<id>``) or
+    ``global``; Andromeda recalls both for every routed task.
+    """
+
+    memory_id: UUID = Field(default_factory=uuid4)
+    namespace: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    source_task_id: UUID | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+    @field_validator("namespace", "content")
+    @classmethod
+    def validate_memory_strings(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value

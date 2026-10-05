@@ -70,6 +70,28 @@
         "title": "CandidateReviewRequest",
         "type": "object"
       },
+      "CatalogInstallRequest": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "CatalogInstallRequest",
+        "type": "object"
+      },
       "ConfigUpdateRequest": {
         "properties": {
           "base_url": {
@@ -344,6 +366,43 @@
           "idempotency_key"
         ],
         "title": "JobRequest",
+        "type": "object"
+      },
+      "MemoryRequest": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          },
+          "source_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Task Id"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "namespace",
+          "content"
+        ],
+        "title": "MemoryRequest",
         "type": "object"
       },
       "RepositoryRequest": {
@@ -872,6 +931,76 @@
           }
         },
         "summary": "Rollback Artifact"
+      }
+    },
+    "/catalog": {
+      "get": {
+        "operationId": "list_catalog_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Catalog"
+      }
+    },
+    "/catalog/{agent_id}/install": {
+      "post": {
+        "operationId": "install_catalog_agent_catalog__agent_id__install_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CatalogInstallRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Req"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Install Catalog Agent"
       }
     },
     "/config": {
@@ -1711,6 +1840,157 @@
         "summary": "Liveness"
       }
     },
+    "/memory": {
+      "get": {
+        "operationId": "recall_memory_memory_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "title": "Namespace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recall Memory"
+      },
+      "post": {
+        "operationId": "remember_memory_memory_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remember Memory"
+      }
+    },
+    "/memory/namespaces": {
+      "get": {
+        "operationId": "list_memory_namespaces_memory_namespaces_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Memory Namespaces"
+      }
+    },
+    "/memory/{memory_id}": {
+      "delete": {
+        "operationId": "forget_memory_memory__memory_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Memory Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Forget Memory"
+      }
+    },
     "/orion/analytics": {
       "get": {
         "operationId": "get_orion_analytics_orion_analytics_get",
@@ -1795,6 +2075,22 @@
           }
         },
         "summary": "Run Orion Training"
+      }
+    },
+    "/quasar": {
+      "get": {
+        "operationId": "get_quasar_status_quasar_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Quasar Status"
       }
     },
     "/ready": {
