@@ -11,6 +11,7 @@ import { OrionAnalytics } from './pages/OrionAnalytics';
 import { Settings }       from './pages/Settings';
 import { Artifacts }      from './pages/Artifacts';
 import { Goals }          from './pages/Goals';
+import { Catalog }        from './pages/Catalog';
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
       <Route path="/review-queue" element={<ReviewQueue />} />
       <Route path="/artifacts"    element={<Artifacts />} />
       <Route path="/goals"        element={<Goals />} />
+      <Route path="/catalog"      element={<Catalog />} />
       <Route path="/orion"        element={<OrionAnalytics />} />
       <Route path="/settings"     element={<Settings />} />
       <Route path="*"             element={<Navigate to="/" replace />} />

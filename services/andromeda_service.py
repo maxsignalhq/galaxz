@@ -208,6 +208,11 @@ class MemoryRequest(BaseModel):
     source_task_id: UUID | None = None
 
 
+class CatalogInstallRequest(BaseModel):
+    version: str | None = None
+    force: bool = False
+
+
 class GoalRequest(BaseModel):
     objective: str
     confidence_threshold: float = 0.65
@@ -770,6 +775,28 @@ def forget_memory(memory_id: UUID):
     if not _andromeda.nebula.forget(memory_id):
         raise HTTPException(status_code=404, detail="memory not found")
     return {"deleted": str(memory_id)}
+
+
+@app.get("/catalog")
+def list_catalog():
+    from core.constellation.catalog import Catalog
+
+    return Catalog().list()
+
+
+@app.post("/catalog/{agent_id}/install")
+def install_catalog_agent(agent_id: str, req: CatalogInstallRequest | None = None):
+    from core.constellation.catalog import Catalog, CatalogConflict, CatalogError, CatalogNotFound
+
+    req = req or CatalogInstallRequest()
+    try:
+        return Catalog().install(agent_id, version=req.version, force=req.force)
+    except CatalogNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CatalogConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CatalogError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/artifacts")
