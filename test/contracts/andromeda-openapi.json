@@ -2688,6 +2688,22 @@
         },
         "summary": "Submit Task Feedback"
       }
+    },
+    "/wormhole": {
+      "get": {
+        "operationId": "get_wormhole_status_wormhole_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Wormhole Status"
+      }
     }
   }
 }

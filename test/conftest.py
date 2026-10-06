@@ -18,6 +18,7 @@ _DEFAULT_DATABASES = {
     "GOAL_DB_PATH": "goals.db",
     "REPOSITORY_DB_PATH": "repositories.db",
     "JOB_DB_PATH": "jobs.db",
+    "POLICY_DB_PATH": "policy.db",
 }
 
 

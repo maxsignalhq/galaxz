@@ -14,6 +14,39 @@ Verifiable evidence of how an agent performs, from the one data source an agent 
 - Metrics are only as honest as the feedback that produced them (`human_verified_rate` shows how much a person checked).
 - No revocation, key rotation or transparency log; endpoints stay behind `GALAXZ_API_KEY`; scorecards are not yet embedded in Agent Cards or the catalog.
 
+## Unreleased — Pre-action authorization
+
+A policy gate that runs before any agent: deny a skill outright, or hold it for human approval. Empty by default, so behavior is unchanged until `config/policy.yaml` has rules. Design: [`docs/specs/2026-10-05-pre-action-policy-design.md`](docs/specs/2026-10-05-pre-action-policy-design.md).
+
+| System | What it does |
+|--------|--------------|
+| **Policy gate** | First node of Andromeda's routing graph. Ordered rules match a skill glob and an origin glob; first match wins. `deny` → `no_agent_found` with `failure_reason="policy_denied"` (A2A callers see `TASK_STATE_REJECTED`). `require_review` → escalated into the review queue with a `policy_hold` record; approving or accepting it issues a single-use, one-hour grant (SQLite, `POLICY_DB_PATH`, default `data/policy.db`, created lazily) for that exact origin + skill + payload, and goal tasks are rerun automatically. No new contract. |
+
+### Known limitations
+
+- Evaluated by Andromeda only; conditions other than skill and origin (payload contents, rate, time) are not supported.
+- A grant authorises a resubmission, it does not execute the held task by itself.
+- The policy file is read at boot (restart to change it) and fails closed: a malformed file stops startup.
+- Grants are single-node SQLite, like Nebula.
+
+## Unreleased — Wormhole (A2A gateway)
+
+Galaxz now speaks Google's [A2A](https://a2a-protocol.org) (Agent2Agent) v1.0 protocol, in both directions, without bypassing the contracts. Off or empty by default. Design: [`docs/specs/2026-10-05-wormhole-a2a-gateway-design.md`](docs/specs/2026-10-05-wormhole-a2a-gateway-design.md).
+
+| System | What it does |
+|--------|--------------|
+| **Wormhole** — A2A gateway | *Inbound:* serves an Agent Card at `/.well-known/agent-card.json` (open skills publicly, the caller's permitted skills via `GetExtendedAgentCard`) and accepts `SendMessage`, `SendStreamingMessage` (SSE), `GetTask` and `CancelTask` at `POST /a2a`. Each caller has a bearer token (`token_env` in `config/a2a.yaml`) that fixes its `origin` (`a2a:*`), so `allowed_origins` is real enforcement here; tasks are ordinary `TaskContract`s on the durable job queue. Job states map to A2A states (`complete` → `COMPLETED`, escalated → `INPUT_REQUIRED`, origin denied → `REJECTED`). *Outbound:* each skill of each remote agent becomes a Pulsar skill `wormhole.<agent>.<skill>` with binary confidence (`1.0` / `0.0`), so a remote agent is never silently retried. `GET /wormhole` reports remote agents. |
+
+New configuration: `config/a2a.yaml` (`callers`, `agents`), `A2A_PUBLIC_URL` (Agent Card URL behind a proxy), and one `token_env` variable per caller or remote agent.
+
+### Known limitations
+
+- **A2A v1.0 only**, JSON-RPC over HTTPS plus SSE. No gRPC/REST bindings, push notifications, `ListTasks`, `SubscribeToTask`, multi-tenancy or A2A 0.3.
+- **Auth is per-caller bearer tokens**, not OAuth or user accounts. Agent Cards are not signature-verified: list only remote agents you trust, since their output is routed into Galaxz.
+- Inbound tasks need the `worker` service; without it they stay `SUBMITTED`.
+- Remote skills are discovered at boot. `wormhole.*` skills are never re-published on Galaxz's own card.
+- Remote agents receive a text part plus a data part `{"skill", "payload"}`; an agent that only reads text parts sees the joined string values of the payload.
+
 ---
 
 ## v1.1.0 — Memory, tools, catalog and access control

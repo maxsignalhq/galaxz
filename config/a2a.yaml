@@ -1,0 +1,20 @@
+# Wormhole — A2A gateway. Both lists are empty by default: nothing is exposed
+# and no remote agent is called until you configure them.
+#
+# callers: who may call Galaxz over A2A. Tokens come from the environment,
+# never from this file. `origin` must start with "a2a:" and is what
+# allowed_origins rules and the review queue see; the caller cannot choose it.
+# `skills` (optional) limits which skills this caller may request (fnmatch).
+callers: []
+#  - token_env: A2A_PARTNER_X_TOKEN
+#    origin: "a2a:partner-x"
+#    skills: ["rigel.*"]
+
+# agents: remote A2A v1.0 agents whose skills become Pulsar skills named
+# wormhole.<name>.<skill_id>. `allowed_origins` is the local policy for them.
+agents: []
+#  - name: translator
+#    url: https://agents.example.com
+#    token_env: TRANSLATOR_TOKEN
+#    timeout_s: 60
+#    allowed_origins: ["goal:*"]

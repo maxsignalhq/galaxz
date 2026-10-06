@@ -6,6 +6,8 @@ from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.task_log import TaskLog
 from agents.rigel.agent import RigelAgent
 from agents.vega.agent import VegaAgent
+from core.a2a.agent import WormholeAgent
+from core.a2a.config import load_a2a_config
 from core.agent_loader import load_yaml_agents
 from core.artifacts.object_storage import object_storage_from_environment
 from core.artifacts.store import ArtifactStore
@@ -57,6 +59,8 @@ def boot(config_path: str = "config/providers.yaml") -> Andromeda:
     mcp_servers = load_mcp_config()
     quasar = QuasarAgent(registry, mcp_servers)  # also clears a stale manifest when none are configured
     quasar_agents = {quasar.AGENT_ID: quasar} if quasar.skill_ids else {}
+    wormhole = WormholeAgent(registry, list(load_a2a_config().agents))  # also clears a stale manifest when none are configured
+    wormhole_agents = {wormhole.AGENT_ID: wormhole} if wormhole.skill_ids else {}
     from orion import OrionService
     from orion.config import OrionConfig
     orion = OrionService(OrionConfig(), registry=registry)
@@ -73,6 +77,7 @@ def boot(config_path: str = "config/providers.yaml") -> Andromeda:
             vega.AGENT_ID: vega,
             **yaml_agents,
             **quasar_agents,
+            **wormhole_agents,
         },
         review_queue=review_queue,
         artifact_store=artifact_store,
@@ -80,6 +85,7 @@ def boot(config_path: str = "config/providers.yaml") -> Andromeda:
     )
     andromeda.orion = orion
     andromeda.quasar = quasar  # kept even if every server failed, so /quasar can report why
+    andromeda.wormhole = wormhole  # kept even if every remote agent failed, so /wormhole can report why
     return andromeda
 
 

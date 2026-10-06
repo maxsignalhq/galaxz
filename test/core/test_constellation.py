@@ -83,7 +83,7 @@ def test_hand_written_agent_not_overwritten_without_force(dirs):
     assert "Mine" in (agents / "demo.yaml").read_text()
 
 
-@pytest.mark.parametrize("agent_id", ["rigel", "vega", "quasar", "andromeda"])
+@pytest.mark.parametrize("agent_id", ["rigel", "vega", "quasar", "wormhole", "andromeda"])
 def test_reserved_agent_ids_rejected(dirs, agent_id):
     catalog, agents = dirs
     _package(catalog, agent_id=agent_id)
