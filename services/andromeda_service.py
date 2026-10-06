@@ -23,6 +23,8 @@ from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.planner import PlanValidationError
 from core.contracts import GoalContract
 from services.file_writer import FileWriter
+from core.a2a.config import A2AConfig, load_a2a_config
+from core.a2a.server import build_a2a_router
 from core.aether.client import AetherClient, get_aether_client
 from core.artifacts.store import identity_key
 from core.contracts import TaskContract
@@ -162,6 +164,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(ApiKeyMiddleware)
+
+_a2a_config_cache: A2AConfig | None = None
+
+
+def _a2a_config() -> A2AConfig:
+    global _a2a_config_cache
+    if _a2a_config_cache is None:
+        _a2a_config_cache = load_a2a_config()
+    return _a2a_config_cache
+
+
+app.include_router(
+    build_a2a_router(
+        config_getter=lambda: _a2a_config(),
+        registry_getter=lambda: _andromeda.registry,
+        jobs_getter=lambda: _jobs(),
+    )
+)
 
 
 class TaskSessionContextItem(BaseModel):
@@ -787,6 +807,14 @@ def get_quasar_status():
     if quasar is None:
         return {"configured": False, "servers": []}
     return quasar.status()
+
+
+@app.get("/wormhole")
+def get_wormhole_status():
+    wormhole = getattr(_andromeda, "wormhole", None)
+    if wormhole is None:
+        return {"configured": False, "agents": []}
+    return wormhole.status()
 
 
 @app.get("/memory/namespaces")
