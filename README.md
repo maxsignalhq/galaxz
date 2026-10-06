@@ -176,6 +176,13 @@ python -m cli.run catalog install summarizer
 - **Quasar:** list MCP servers in `config/mcp.yaml` (see the commented example) and restart.
   Each tool becomes a skill named `quasar.<server>.<tool>`; stdio servers only, and they run
   with Galaxz's privileges, so list only servers you trust.
+- **Signed scorecards:** Orion's real outcome data per agent and skill (success rate with a Wilson 95%
+  interval, partial/fail rates, average confidence, human-verified share, p50/p95 latency) can be
+  attested with an Ed25519 key you hold. `python -m cli.run scorecard keygen` makes a key; set
+  `GALAXZ_SCORECARD_KEY_PATH`, then `GET /scorecards` (or `/scorecards/{skill_id}`, `?days=`) returns signed
+  envelopes and `GET /scorecards/key` the public key. Anyone can check one offline with
+  `python -m cli.run scorecard verify FILE --public-key KEY`. Without a key the endpoints return 503.
+
 - **Wormhole (A2A):** Galaxz speaks Google's [A2A](https://a2a-protocol.org) v1.0 agent-to-agent protocol in
   both directions, configured in `config/a2a.yaml` (empty by default). *Inbound:* the Agent Card is served at
   `/.well-known/agent-card.json` and tasks arrive at `POST /a2a` (`SendMessage`, `SendStreamingMessage`,

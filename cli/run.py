@@ -125,3 +125,47 @@ def catalog_install(agent_id, version, force):
 
 if __name__ == "__main__":
     galaxz()
+
+
+@galaxz.group()
+def scorecard():
+    """Signed Orion scorecards."""
+
+
+@scorecard.command("keygen")
+@click.option("--out", "out_path", default="scorecard-signing-key.pem", help="Where to write the private key (PEM)")
+def scorecard_keygen(out_path):
+    """Create an Ed25519 signing key. Point GALAXZ_SCORECARD_KEY_PATH at the file."""
+    import os
+
+    from core.scorecards import ScorecardSigner, generate_private_key_pem
+
+    pem = generate_private_key_pem()
+    try:
+        fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        raise click.ClickException(f"{out_path} already exists; refusing to overwrite a key")
+    with os.fdopen(fd, "w") as f:
+        f.write(pem)
+    signer = ScorecardSigner.from_pem(pem)
+    click.echo(f"private key written to {out_path} (keep it secret)")
+    click.echo(f"kid: {signer.kid}")
+    click.echo(f"public key: {signer.public_key_b64}")
+
+
+@scorecard.command("verify")
+@click.argument("envelope_path")
+@click.option("--public-key", required=True, help="Base64url raw Ed25519 public key (from /scorecards/key)")
+def scorecard_verify(envelope_path, public_key):
+    """Verify a signed scorecard envelope (a file holding one envelope as JSON)."""
+    from core.scorecards import ScorecardError, verify_envelope
+
+    with open(envelope_path) as f:
+        envelope = json.load(f)
+    try:
+        card = verify_envelope(envelope, public_key)
+    except ScorecardError as exc:
+        raise click.ClickException(f"INVALID: {exc}")
+    subject = card.get("subject", {})
+    click.echo(f"VALID: {card.get('issuer')} attests {subject.get('agent_id')} / {subject.get('skill_id')}")
+    click.echo(json.dumps(card.get("metrics", {}), indent=2))

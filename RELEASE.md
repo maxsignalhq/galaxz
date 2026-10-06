@@ -1,5 +1,19 @@
 # Galaxz Release Notes
 
+## Unreleased — Signed Orion scorecards
+
+Verifiable evidence of how an agent performs, from the one data source an agent cannot fake. Off until you configure a signing key. Design: [`docs/specs/2026-10-05-signed-scorecards-design.md`](docs/specs/2026-10-05-signed-scorecards-design.md).
+
+| System | What it does |
+|--------|--------------|
+| **Scorecards** (Orion) | Per `(agent, skill)` metrics from Orion's events over the last `days` (default 30): tasks, success rate with a Wilson 95% interval, partial/fail rates, average confidence, human-verified rate, p50/p95 latency, and `sample.sufficient` (>= 20 tasks). Signed with Ed25519 as a detached payload, so verifying needs no canonicalization rules. `GET /scorecards`, `GET /scorecards/{skill_id}`, `GET /scorecards/key`; CLI `galaxz scorecard keygen\|verify`. Key via `GALAXZ_SCORECARD_KEY_PATH` (or `GALAXZ_SCORECARD_KEY`); `GALAXZ_SCORECARD_ISSUER` names the issuer. No new contract or dependency. |
+
+### Known limitations
+
+- It proves that *this operator* attests to these numbers, not that they are good; value comes from the issuer's reputation. Anyone can run their own Galaxz.
+- Metrics are only as honest as the feedback that produced them (`human_verified_rate` shows how much a person checked).
+- No revocation, key rotation or transparency log; endpoints stay behind `GALAXZ_API_KEY`; scorecards are not yet embedded in Agent Cards or the catalog.
+
 ## Unreleased — Pre-action authorization
 
 A policy gate that runs before any agent: deny a skill outright, or hold it for human approval. Empty by default, so behavior is unchanged until `config/policy.yaml` has rules. Design: [`docs/specs/2026-10-05-pre-action-policy-design.md`](docs/specs/2026-10-05-pre-action-policy-design.md).
