@@ -27,6 +27,7 @@ from core.artifacts.store import ArtifactStore
 from core.contracts import TaskContract
 from core.goals.store import GoalStore
 from core.nebula.store import MAX_SKILL_LESSONS, SKILL_NAMESPACE_PREFIX, NebulaStore
+from core.policy import DENY, REQUIRE_REVIEW, GrantStore, PolicyDecision, PolicyEngine, load_policy, payload_digest
 from core.pulsar.registry import PulsarRegistry
 from orion.core.weights_loader import RoutingWeightsLoader
 from workspace.config import load_workspace_config
@@ -40,6 +41,60 @@ if not logger.handlers:
     _handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
     logger.addHandler(_handler)
 ROUTING_WEIGHTS_PATH = Path("orion/config/routing_weights.yaml")
+
+
+def _make_policy_node(policy: PolicyEngine, grants: GrantStore):
+    """First node: deny, hold for review, or let the task through before any agent runs."""
+
+    def policy_node(state: AndromedaState) -> dict:
+        if not policy.enabled:
+            return {}
+        origin = state.get("origin")
+        payload = state.get("payload") or {}
+        held: list[tuple[str, PolicyDecision]] = []
+        for skill in state["required_skills"]:
+            decision = policy.evaluate_skill(skill, origin)
+            if decision.action == DENY:
+                logger.warning("[policy] denied skill=%s origin=%s rule=%s", skill, origin, decision.rule_index)
+                return {
+                    "failure_reason": "policy_denied",
+                    "assignment_reason": f"policy denied: {decision.reason}",
+                    "gaps": [decision.reason],
+                }
+            if decision.action == REQUIRE_REVIEW:
+                held.append((skill, decision))
+        for skill, decision in held:
+            digest = payload_digest(origin, skill, payload)
+            if grants.consume(origin=origin or "", skill=skill, digest=digest):
+                logger.info("[policy] grant consumed skill=%s origin=%s", skill, origin)
+                continue
+            logger.warning("[policy] held for review skill=%s origin=%s rule=%s", skill, origin, decision.rule_index)
+            return {
+                "failure_reason": "policy_requires_review",
+                "assignment_reason": f"policy requires review: {decision.reason}",
+                "gaps": [decision.reason],
+                "result": {
+                    "policy_hold": {
+                        "origin": origin or "",
+                        "skill": skill,
+                        "digest": digest,
+                        "reason": decision.reason,
+                        "rule_index": decision.rule_index,
+                    }
+                },
+            }
+        return {}
+
+    return policy_node
+
+
+def _after_policy(state: AndromedaState) -> str:
+    reason = state.get("failure_reason")
+    if reason == "policy_denied":
+        return "no_agent_found"
+    if reason == "policy_requires_review":
+        return "escalate"
+    return "skill_match"
 
 
 def _after_skill_match(state: AndromedaState) -> str:
@@ -168,6 +223,8 @@ class Andromeda:
         artifact_store: Optional[ArtifactStore] = None,
         goal_store: Optional[GoalStore] = None,
         nebula: Optional[NebulaStore] = None,
+        policy: Optional[PolicyEngine] = None,
+        policy_grants: Optional[GrantStore] = None,
     ):
         self.registry = registry
         self.task_log = task_log
@@ -178,6 +235,8 @@ class Andromeda:
             db_path=os.getenv("ARTIFACT_DB_PATH", "data/artifacts.db")
         )
         self.nebula = nebula or NebulaStore(db_path=os.getenv("NEBULA_DB_PATH", "data/nebula.db"))
+        self.policy = policy if policy is not None else load_policy()
+        self.policy_grants = policy_grants or GrantStore()
         self.goal_store = goal_store or GoalStore()
         self.goal_planner = GoalPlanner(registry)
         self.goal_runner = GoalRunner(self, self.goal_store)
@@ -206,6 +265,7 @@ class Andromeda:
 
         g = StateGraph(AndromedaState)
 
+        g.add_node("policy_check", _make_policy_node(self.policy, self.policy_grants))
         g.add_node("skill_match", skill_match)
         g.add_node("load_check", load_check)
         g.add_node("assign", assign)
@@ -215,7 +275,13 @@ class Andromeda:
         g.add_node("complete", _complete_node)
         g.add_node("no_agent_found", _no_agent_found_node)
 
-        g.set_entry_point("skill_match")
+        g.set_entry_point("policy_check")
+
+        g.add_conditional_edges("policy_check", _after_policy, {
+            "skill_match": "skill_match",
+            "no_agent_found": "no_agent_found",
+            "escalate": "escalate",
+        })
 
         g.add_conditional_edges("skill_match", _after_skill_match, {
             "load_check": "load_check",

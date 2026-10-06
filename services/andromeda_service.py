@@ -23,6 +23,8 @@ from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.planner import PlanValidationError
 from core.contracts import GoalContract
 from services.file_writer import FileWriter
+from core.a2a.config import A2AConfig, load_a2a_config
+from core.a2a.server import build_a2a_router
 from core.aether.client import AetherClient, get_aether_client
 from core.artifacts.store import identity_key
 from core.contracts import TaskContract
@@ -32,6 +34,7 @@ from core.jobs import PostgresJobRepository, SqliteJobRepository
 from core.goals import DurableGoalCoordinator
 from core.repositories import RepositoryAccessError, RepositoryStore
 from core.github import GitHubAppClient, GitHubClient, PullRequestEvidence, WebhookStore
+from core.scorecards import ScorecardError, ScorecardSigner, build_scorecards, load_signer
 from core.security import ArtifactScanOverride, scan_artifacts
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
@@ -165,6 +168,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(ApiKeyMiddleware)
+
+_a2a_config_cache: A2AConfig | None = None
+
+
+def _a2a_config() -> A2AConfig:
+    global _a2a_config_cache
+    if _a2a_config_cache is None:
+        _a2a_config_cache = load_a2a_config()
+    return _a2a_config_cache
+
+
+app.include_router(
+    build_a2a_router(
+        config_getter=lambda: _a2a_config(),
+        registry_getter=lambda: _andromeda.registry,
+        jobs_getter=lambda: _jobs(),
+    )
+)
 
 
 class TaskSessionContextItem(BaseModel):
@@ -792,6 +813,14 @@ def get_quasar_status():
     return quasar.status()
 
 
+@app.get("/wormhole")
+def get_wormhole_status():
+    wormhole = getattr(_andromeda, "wormhole", None)
+    if wormhole is None:
+        return {"configured": False, "agents": []}
+    return wormhole.status()
+
+
 @app.get("/memory/namespaces")
 def list_memory_namespaces():
     return _andromeda.nebula.namespaces()
@@ -933,6 +962,32 @@ def _resume_goal_from_review(queue_task_id: str, goal_id: str, approved: bool) -
             resolved_task_id, status="failed", error="rejected by reviewer"
         )
         _andromeda.goal_store.set_goal_status(gid, "failed")
+
+
+def _issue_policy_grant(item: dict) -> bool:
+    """Approving a task held by a require_review policy issues a single-use grant."""
+    output = item.get("agent_output")
+    hold = output.get("policy_hold") if isinstance(output, dict) else None
+    if not isinstance(hold, dict) or not all(isinstance(hold.get(k), str) for k in ("origin", "skill", "digest")):
+        return False
+    _andromeda.policy_grants.issue(
+        origin=hold["origin"], skill=hold["skill"], digest=hold["digest"], granted_by="review"
+    )
+    return True
+
+
+def _release_goal_task_after_review(item: dict, held: bool) -> None:
+    if not held:
+        _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
+        return
+    # A held task never ran, so there is no output to accept: rerun it now that it has a grant.
+    planned = item.get("planned_task_id")
+    try:
+        _goal_coordinator().rerun(
+            UUID(item["goal_id"]), UUID(planned), actor="review", reason="policy hold approved"
+        )
+    except (KeyError, ValueError, TypeError):
+        logger.warning("could not rerun held goal task %s; rerun it manually", planned)
 
 
 @app.post("/goals", status_code=202)
@@ -1234,6 +1289,53 @@ def get_orion_analytics(hours: int = 24):
         return {"event_volume": [], "by_domain": [], "by_agent": [], "outcome_counts": {}}
 
 
+_scorecard_signer_cache: ScorecardSigner | None = None
+
+
+def _scorecard_signer() -> ScorecardSigner | None:
+    global _scorecard_signer_cache
+    if _scorecard_signer_cache is None:
+        try:
+            _scorecard_signer_cache = load_signer()
+        except ScorecardError as exc:
+            logger.error("scorecard signing key is unusable: %s", exc)
+            return None
+    return _scorecard_signer_cache
+
+
+def _require_scorecard_signer() -> ScorecardSigner:
+    signer = _scorecard_signer()
+    if signer is None:
+        raise HTTPException(status_code=503, detail="scorecard signing is not configured")
+    return signer
+
+
+def _signed_scorecards(days: int, skill_id: str | None = None) -> list[dict]:
+    signer = _require_scorecard_signer()
+    cards = build_scorecards(
+        _orion_db_path(), days=days, issuer=os.getenv("GALAXZ_SCORECARD_ISSUER", "galaxz"), skill_id=skill_id
+    )
+    return [signer.sign(card) for card in cards]
+
+
+@app.get("/scorecards/key")
+def get_scorecard_key():
+    return _require_scorecard_signer().public_key_info()
+
+
+@app.get("/scorecards")
+def list_scorecards(days: int = Query(30, ge=1, le=365)):
+    return {"scorecards": _signed_scorecards(days)}
+
+
+@app.get("/scorecards/{skill_id}")
+def get_skill_scorecards(skill_id: str, days: int = Query(30, ge=1, le=365)):
+    cards = _signed_scorecards(days, skill_id)
+    if not cards:
+        raise HTTPException(status_code=404, detail="no Orion events for this skill in the window")
+    return {"scorecards": cards}
+
+
 @app.get("/agents")
 def get_agents():
     return [
@@ -1254,8 +1356,9 @@ def approve_task(task_id: str, req: ResolveRequest = ResolveRequest()):
 
     _andromeda.task_log.update_status(task_id, item.get("task_type", ""), "approved")
 
+    held = _issue_policy_grant(item)
     if item.get("goal_id"):
-        _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
+        _release_goal_task_after_review(item, held)
 
     event = FeedbackEvent(
         task_id=_feedback_task_id(task_id, item),
@@ -1285,8 +1388,9 @@ def accept_task(task_id: str, req: ResolveRequest = ResolveRequest()):
 
     _andromeda.task_log.update_status(task_id, item.get("task_type", ""), "accepted")
 
+    held = _issue_policy_grant(item)
     if item.get("goal_id"):
-        _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
+        _release_goal_task_after_review(item, held)
 
     event = FeedbackEvent(
         task_id=_feedback_task_id(task_id, item),

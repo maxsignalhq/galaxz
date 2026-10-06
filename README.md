@@ -182,9 +182,30 @@ python -m cli.run catalog install summarizer
   (optionally with edited `content`) stores one as a Nebula memory in `skill:<skill_id>`, which routing
   then passes to that skill (up to 3, newest first); `POST /lessons/{id}/reject` discards it. Nothing is
   applied until approved, and `DELETE /memory/{id}` revokes an approved lesson.
+
+- **Signed scorecards:** Orion's real outcome data per agent and skill (success rate with a Wilson 95%
+  interval, partial/fail rates, average confidence, human-verified share, p50/p95 latency) can be
+  attested with an Ed25519 key you hold. `python -m cli.run scorecard keygen` makes a key; set
+  `GALAXZ_SCORECARD_KEY_PATH`, then `GET /scorecards` (or `/scorecards/{skill_id}`, `?days=`) returns signed
+  envelopes and `GET /scorecards/key` the public key. Anyone can check one offline with
+  `python -m cli.run scorecard verify FILE --public-key KEY`. Without a key the endpoints return 503.
+
+- **Wormhole (A2A):** Galaxz speaks Google's [A2A](https://a2a-protocol.org) v1.0 agent-to-agent protocol in
+  both directions, configured in `config/a2a.yaml` (empty by default). *Inbound:* the Agent Card is served at
+  `/.well-known/agent-card.json` and tasks arrive at `POST /a2a` (`SendMessage`, `SendStreamingMessage`,
+  `GetTask`, `CancelTask`, `GetExtendedAgentCard`); each caller has its own bearer token (`token_env`) mapped to a
+  fixed `a2a:*` origin, so `allowed_origins` rules apply to it. Inbound tasks run on the job queue, so the
+  `worker` service must be running. Set `A2A_PUBLIC_URL` when Galaxz sits behind a proxy. *Outbound:* each skill
+  of each remote agent in `agents:` becomes a Pulsar skill named `wormhole.<agent>.<skill>`; `GET /wormhole`
+  reports their status. v1.0 peers only; cards are not signature-verified, so list only agents you trust.
 - **Access control:** give a skill `allowed_origins` (for example `["goal:*"]`) in its manifest to
   limit which task origins may use it. A task with no permitted agent returns `no_agent_found`
   with `failure_reason="origin_not_allowed"`. This is policy, not authentication.
+- **Pre-action authorization:** `config/policy.yaml` (empty by default) holds ordered rules
+  `{skill, origin, action: deny | require_review, reason}` checked before any agent runs. `deny`
+  ends the task as `no_agent_found` / `policy_denied`; `require_review` parks it in the review
+  queue, and approving it issues a single-use one-hour grant so an identical resubmission (or the
+  goal rerun) proceeds. A malformed policy file stops startup rather than weakening the policy.
 
 See [RELEASE.md](RELEASE.md) for details and limits, and [docs/specs/](docs/specs/) for the designs.
 
