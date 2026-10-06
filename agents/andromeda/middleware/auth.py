@@ -19,6 +19,10 @@ _EXEMPT_ROUTES = {
     ("GET", "/orion/status"),
     # GitHub authenticates this endpoint with X-Hub-Signature-256.
     ("POST", "/github/webhook"),
+    # A2A callers authenticate with per-caller tokens inside the A2A handler
+    # (core/a2a/server.py), not with GALAXZ_API_KEY.
+    ("GET", "/.well-known/agent-card.json"),
+    ("POST", "/a2a"),
 }
 
 
