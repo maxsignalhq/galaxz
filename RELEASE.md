@@ -1,5 +1,20 @@
 # Galaxz Release Notes
 
+## Unreleased — Pre-action authorization
+
+A policy gate that runs before any agent: deny a skill outright, or hold it for human approval. Empty by default, so behavior is unchanged until `config/policy.yaml` has rules. Design: [`docs/specs/2026-10-05-pre-action-policy-design.md`](docs/specs/2026-10-05-pre-action-policy-design.md).
+
+| System | What it does |
+|--------|--------------|
+| **Policy gate** | First node of Andromeda's routing graph. Ordered rules match a skill glob and an origin glob; first match wins. `deny` → `no_agent_found` with `failure_reason="policy_denied"` (A2A callers see `TASK_STATE_REJECTED`). `require_review` → escalated into the review queue with a `policy_hold` record; approving or accepting it issues a single-use, one-hour grant (SQLite, `POLICY_DB_PATH`, default `data/policy.db`, created lazily) for that exact origin + skill + payload, and goal tasks are rerun automatically. No new contract. |
+
+### Known limitations
+
+- Evaluated by Andromeda only; conditions other than skill and origin (payload contents, rate, time) are not supported.
+- A grant authorises a resubmission, it does not execute the held task by itself.
+- The policy file is read at boot (restart to change it) and fails closed: a malformed file stops startup.
+- Grants are single-node SQLite, like Nebula.
+
 ## Unreleased — Wormhole (A2A gateway)
 
 Galaxz now speaks Google's [A2A](https://a2a-protocol.org) (Agent2Agent) v1.0 protocol, in both directions, without bypassing the contracts. Off or empty by default. Design: [`docs/specs/2026-10-05-wormhole-a2a-gateway-design.md`](docs/specs/2026-10-05-wormhole-a2a-gateway-design.md).

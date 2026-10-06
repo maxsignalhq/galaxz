@@ -1,0 +1,19 @@
+# Pre-action authorization. Evaluated once per task before any agent runs.
+# Empty by default: every task is allowed. Rules are checked in order and the
+# first rule matching a skill decides. Restart to apply changes. A malformed
+# file stops startup (fail closed) instead of silently weakening the policy.
+#
+#   skill:   fnmatch pattern for the skill id (required)
+#   origin:  fnmatch pattern for TaskContract.origin (default "*")
+#   action:  deny            -> the task is rejected (failure_reason=policy_denied)
+#            require_review  -> the task waits in the review queue; approving it
+#                               issues a single-use, one-hour grant for that exact
+#                               (origin, skill, payload) so a resubmission proceeds
+#   reason:  free text shown to the reviewer
+rules: []
+#  - skill: "quasar.fs.*"
+#    origin: "a2a:*"
+#    action: require_review
+#    reason: "filesystem tools need a human"
+#  - skill: "quasar.shell.*"
+#    action: deny

@@ -187,6 +187,11 @@ python -m cli.run catalog install summarizer
 - **Access control:** give a skill `allowed_origins` (for example `["goal:*"]`) in its manifest to
   limit which task origins may use it. A task with no permitted agent returns `no_agent_found`
   with `failure_reason="origin_not_allowed"`. This is policy, not authentication.
+- **Pre-action authorization:** `config/policy.yaml` (empty by default) holds ordered rules
+  `{skill, origin, action: deny | require_review, reason}` checked before any agent runs. `deny`
+  ends the task as `no_agent_found` / `policy_denied`; `require_review` parks it in the review
+  queue, and approving it issues a single-use one-hour grant so an identical resubmission (or the
+  goal rerun) proceeds. A malformed policy file stops startup rather than weakening the policy.
 
 See [RELEASE.md](RELEASE.md) for details and limits, and [docs/specs/](docs/specs/) for the designs.
 

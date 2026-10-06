@@ -960,6 +960,32 @@ def _resume_goal_from_review(queue_task_id: str, goal_id: str, approved: bool) -
         _andromeda.goal_store.set_goal_status(gid, "failed")
 
 
+def _issue_policy_grant(item: dict) -> bool:
+    """Approving a task held by a require_review policy issues a single-use grant."""
+    output = item.get("agent_output")
+    hold = output.get("policy_hold") if isinstance(output, dict) else None
+    if not isinstance(hold, dict) or not all(isinstance(hold.get(k), str) for k in ("origin", "skill", "digest")):
+        return False
+    _andromeda.policy_grants.issue(
+        origin=hold["origin"], skill=hold["skill"], digest=hold["digest"], granted_by="review"
+    )
+    return True
+
+
+def _release_goal_task_after_review(item: dict, held: bool) -> None:
+    if not held:
+        _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
+        return
+    # A held task never ran, so there is no output to accept: rerun it now that it has a grant.
+    planned = item.get("planned_task_id")
+    try:
+        _goal_coordinator().rerun(
+            UUID(item["goal_id"]), UUID(planned), actor="review", reason="policy hold approved"
+        )
+    except (KeyError, ValueError, TypeError):
+        logger.warning("could not rerun held goal task %s; rerun it manually", planned)
+
+
 @app.post("/goals", status_code=202)
 def create_goal(req: GoalRequest):
     goal = GoalContract(
@@ -1279,8 +1305,9 @@ def approve_task(task_id: str, req: ResolveRequest = ResolveRequest()):
 
     _andromeda.task_log.update_status(task_id, item.get("task_type", ""), "approved")
 
+    held = _issue_policy_grant(item)
     if item.get("goal_id"):
-        _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
+        _release_goal_task_after_review(item, held)
 
     event = FeedbackEvent(
         task_id=_feedback_task_id(task_id, item),
@@ -1310,8 +1337,9 @@ def accept_task(task_id: str, req: ResolveRequest = ResolveRequest()):
 
     _andromeda.task_log.update_status(task_id, item.get("task_type", ""), "accepted")
 
+    held = _issue_policy_grant(item)
     if item.get("goal_id"):
-        _resume_goal_from_review(item["task_id"], item["goal_id"], approved=True)
+        _release_goal_task_after_review(item, held)
 
     event = FeedbackEvent(
         task_id=_feedback_task_id(task_id, item),
