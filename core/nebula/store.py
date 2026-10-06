@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS memories (
 """
 _CREATE_INDEX = "CREATE INDEX IF NOT EXISTS idx_memories_ns ON memories (namespace, created_at)"
 
+# Approved Orion lessons live in `skill:<skill_id>`; Andromeda always passes the newest few.
+SKILL_NAMESPACE_PREFIX = "skill:"
+MAX_SKILL_LESSONS = 3
+
 # Recall ranks in Python over the most recent rows per call; bounded so a huge
 # namespace cannot make every routed task slow.
 _SCAN_LIMIT = 500

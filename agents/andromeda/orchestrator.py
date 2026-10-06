@@ -26,7 +26,7 @@ from agents.vega.agent import VegaAgent
 from core.artifacts.store import ArtifactStore
 from core.contracts import TaskContract
 from core.goals.store import GoalStore
-from core.nebula.store import NebulaStore
+from core.nebula.store import MAX_SKILL_LESSONS, SKILL_NAMESPACE_PREFIX, NebulaStore
 from core.policy import DENY, REQUIRE_REVIEW, GrantStore, PolicyDecision, PolicyEngine, load_policy, payload_digest
 from core.pulsar.registry import PulsarRegistry
 from orion.core.weights_loader import RoutingWeightsLoader
@@ -438,6 +438,10 @@ class Andromeda:
 
         query = " ".join(v for v in task.payload.values() if isinstance(v, str))
         memories = self.nebula.recall([task.origin, "global"], query=query, limit=5) if query else []
+        lessons = self.nebula.list(f"{SKILL_NAMESPACE_PREFIX}{task.skill}", limit=MAX_SKILL_LESSONS)
+        if lessons:
+            seen = {m.memory_id for m in memories}
+            memories = memories + [lesson for lesson in lessons if lesson.memory_id not in seen]
         if memories:
             context = {
                 **(context or {}),

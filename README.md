@@ -176,6 +176,13 @@ python -m cli.run catalog install summarizer
 - **Quasar:** list MCP servers in `config/mcp.yaml` (see the commented example) and restart.
   Each tool becomes a skill named `quasar.<server>.<tool>`; stdio servers only, and they run
   with Galaxz's privileges, so list only servers you trust.
+- **Skill lessons:** turn human corrections into reusable guidance, with a person approving every step.
+  `POST /lessons/propose` asks the LLM to distil guidelines from corrected tasks in Orion (3+ per
+  agent and skill); they wait as pending candidates (`GET /lessons`). `POST /lessons/{id}/approve`
+  (optionally with edited `content`) stores one as a Nebula memory in `skill:<skill_id>`, which routing
+  then passes to that skill (up to 3, newest first); `POST /lessons/{id}/reject` discards it. Nothing is
+  applied until approved, and `DELETE /memory/{id}` revokes an approved lesson.
+
 - **Signed scorecards:** Orion's real outcome data per agent and skill (success rate with a Wilson 95%
   interval, partial/fail rates, average confidence, human-verified share, p50/p95 latency) can be
   attested with an Ed25519 key you hold. `python -m cli.run scorecard keygen` makes a key; set
