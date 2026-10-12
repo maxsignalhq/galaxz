@@ -94,6 +94,15 @@ class GoalStore:
         goal_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(goals)")}
         if "workspace_root" not in goal_columns:
             self._conn.execute("ALTER TABLE goals ADD COLUMN workspace_root TEXT")
+        for name, ddl in (
+            ("token_budget", "INTEGER"),
+            ("tokens_used", "INTEGER NOT NULL DEFAULT 0"),
+            ("fallback_used", "INTEGER NOT NULL DEFAULT 0"),
+            ("resume_after", "TEXT"),
+            ("pause_reason", "TEXT"),
+        ):
+            if name not in goal_columns:
+                self._conn.execute(f"ALTER TABLE goals ADD COLUMN {name} {ddl}")
         self._conn.commit()
 
     def bind_repository(self, goal_id: UUID, repository_id: str, base_revision: str, base_commit_sha: str) -> None:
@@ -111,11 +120,12 @@ class GoalStore:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO goals (goal_id, origin, objective, confidence_threshold, "
-                "status, plan_confidence, created_at, workspace_root) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "status, plan_confidence, created_at, workspace_root, token_budget) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     str(goal.goal_id), goal.origin, goal.objective,
                     goal.confidence_threshold, goal.status, goal.plan_confidence,
-                    goal.created_at.isoformat(), goal.workspace_root,
+                    goal.created_at.isoformat(), goal.workspace_root, goal.token_budget,
                 ),
             )
             self._conn.commit()
@@ -134,6 +144,11 @@ class GoalStore:
             confidence_threshold=row["confidence_threshold"],
             status=row["status"],
             plan_confidence=row["plan_confidence"],
+            token_budget=row["token_budget"],
+            tokens_used=row["tokens_used"],
+            fallback_used=bool(row["fallback_used"]),
+            resume_after=row["resume_after"],
+            pause_reason=row["pause_reason"],
             created_at=row["created_at"],
         )
 
@@ -156,6 +171,50 @@ class GoalStore:
         with self._lock:
             self._conn.execute(
                 "UPDATE goals SET status = ? WHERE goal_id = ?", (status, str(goal_id))
+            )
+            self._conn.commit()
+
+    def add_tokens_used(self, goal_id: UUID, tokens: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE goals SET tokens_used = tokens_used + ? WHERE goal_id = ?",
+                (tokens, str(goal_id)),
+            )
+            self._conn.commit()
+
+    def set_fallback_used(self, goal_id: UUID, used: bool) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE goals SET fallback_used = ? WHERE goal_id = ?",
+                (1 if used else 0, str(goal_id)),
+            )
+            self._conn.commit()
+
+    def set_token_budget(self, goal_id: UUID, token_budget: int | None) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE goals SET token_budget = ? WHERE goal_id = ?",
+                (token_budget, str(goal_id)),
+            )
+            self._conn.commit()
+
+    def pause_with_reason(
+        self, goal_id: UUID, reason: str, resume_after: datetime | None
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE goals SET status = 'paused', pause_reason = ?, resume_after = ? "
+                "WHERE goal_id = ?",
+                (reason, resume_after.isoformat() if resume_after else None, str(goal_id)),
+            )
+            self._conn.commit()
+
+    def clear_pause(self, goal_id: UUID) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE goals SET pause_reason = NULL, resume_after = NULL, "
+                "fallback_used = 0 WHERE goal_id = ?",
+                (str(goal_id),),
             )
             self._conn.commit()
 
@@ -348,6 +407,11 @@ class GoalStore:
                 "goal_id": str(goal.goal_id),
                 "origin": goal.origin,
                 "objective": goal.objective,
+                "token_budget": goal.token_budget,
+                "tokens_used": goal.tokens_used,
+                "fallback_used": goal.fallback_used,
+                "pause_reason": goal.pause_reason,
+                "resume_after": goal.resume_after.isoformat() if goal.resume_after else None,
                 "confidence_threshold": goal.confidence_threshold,
                 "status": goal.status,
                 "plan_confidence": goal.plan_confidence,
