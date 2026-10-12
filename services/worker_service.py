@@ -7,14 +7,14 @@ import socket
 
 from boot import boot
 from core.observability import configure_logging
-from core.contracts import TaskContract
-from core.jobs import CancellationToken
 from core.jobs import DurableWorker
 from core.jobs import WorkerConfig
 from core.jobs import PostgresJobRepository
 from core.jobs import SqliteJobRepository
 from core.jobs.completion import CompletionPublisher
 from core.goals import DurableGoalCoordinator
+from core.goals.executor import make_goal_executor
+from core.llm.provider import load_fallback_provider_config
 from core.storage.manage import validate_runtime_database_configuration
 
 
@@ -30,7 +30,8 @@ def main() -> None:
     configure_logging()
     database = os.getenv("GALAXZ_DATABASE_URL") or os.getenv("JOB_DB_PATH", "data/jobs.db")
     repository = PostgresJobRepository(database) if database.startswith(("postgres://", "postgresql://", "postgresql+")) else SqliteJobRepository(database)
-    andromeda = boot(os.getenv("GALAXZ_CONFIG_PATH", "config/providers.yaml"))
+    config_path = os.getenv("GALAXZ_CONFIG_PATH", "config/providers.yaml")
+    andromeda = boot(config_path)
     coordinator = DurableGoalCoordinator(
         andromeda.goal_store,
         repository,
@@ -42,11 +43,9 @@ def main() -> None:
         publisher.publish_pending()
         coordinator.reconcile_all()
 
-    def execute(task: TaskContract, token: CancellationToken) -> dict:
-        token.raise_if_cancelled()
-        result = andromeda.route(task=task)
-        token.raise_if_cancelled()
-        return result
+    execute = make_goal_executor(
+        andromeda.route, andromeda.goal_store, load_fallback_provider_config(config_path)
+    )
 
     worker = DurableWorker(
         repository,
