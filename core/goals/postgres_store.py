@@ -40,6 +40,10 @@ class PostgresGoalStore:
             goal_id=UUID(row["goal_id"]), origin=row["origin"], objective=row["objective"],
             confidence_threshold=row["confidence_threshold"], status=row["status"],
             plan_confidence=row["plan_confidence"], created_at=_timestamp(row["created_at"]),
+            token_budget=row["token_budget"], tokens_used=row["tokens_used"],
+            fallback_used=bool(row["fallback_used"]),
+            resume_after=_timestamp(row["resume_after"]) if row["resume_after"] else None,
+            pause_reason=row["pause_reason"],
         )
 
     @staticmethod
@@ -57,11 +61,12 @@ class PostgresGoalStore:
     def create_goal(self, goal: GoalContract) -> None:
         with self.engine.begin() as c:
             c.execute(text("""INSERT INTO goals
-                (goal_id, origin, objective, confidence_threshold, status, plan_confidence, created_at)
-                VALUES (:id, :origin, :objective, :threshold, :status, :confidence, :created)"""), {
+                (goal_id, origin, objective, confidence_threshold, status, plan_confidence, created_at, token_budget)
+                VALUES (:id, :origin, :objective, :threshold, :status, :confidence, :created, :budget)"""), {
                 "id": str(goal.goal_id), "origin": goal.origin, "objective": goal.objective,
                 "threshold": goal.confidence_threshold, "status": goal.status,
                 "confidence": goal.plan_confidence, "created": goal.created_at,
+                "budget": goal.token_budget,
             })
 
     def get_goal(self, goal_id: UUID) -> GoalContract | None:
@@ -82,6 +87,35 @@ class PostgresGoalStore:
     def set_goal_status(self, goal_id: UUID, status: str) -> None:
         with self.engine.begin() as c:
             c.execute(text("UPDATE goals SET status=:status WHERE goal_id=:id"), {"status": status, "id": str(goal_id)})
+
+    def add_tokens_used(self, goal_id: UUID, tokens: int) -> None:
+        with self.engine.begin() as c:
+            c.execute(text("UPDATE goals SET tokens_used=tokens_used+:n WHERE goal_id=:id"),
+                      {"n": tokens, "id": str(goal_id)})
+
+    def set_fallback_used(self, goal_id: UUID, used: bool) -> None:
+        with self.engine.begin() as c:
+            c.execute(text("UPDATE goals SET fallback_used=:u WHERE goal_id=:id"),
+                      {"u": used, "id": str(goal_id)})
+
+    def set_token_budget(self, goal_id: UUID, token_budget: int | None) -> None:
+        with self.engine.begin() as c:
+            c.execute(text("UPDATE goals SET token_budget=:b WHERE goal_id=:id"),
+                      {"b": token_budget, "id": str(goal_id)})
+
+    def pause_with_reason(self, goal_id: UUID, reason: str, resume_after: datetime | None) -> None:
+        with self.engine.begin() as c:
+            c.execute(
+                text("UPDATE goals SET status='paused', pause_reason=:r, resume_after=:t WHERE goal_id=:id"),
+                {"r": reason, "t": resume_after.isoformat() if resume_after else None, "id": str(goal_id)},
+            )
+
+    def clear_pause(self, goal_id: UUID) -> None:
+        with self.engine.begin() as c:
+            c.execute(
+                text("UPDATE goals SET pause_reason=NULL, resume_after=NULL, fallback_used=:f WHERE goal_id=:id"),
+                {"f": False, "id": str(goal_id)},
+            )
 
     def bind_repository(self, goal_id: UUID, repository_id: str, base_revision: str, base_commit_sha: str) -> None:
         with self.engine.begin() as c:
