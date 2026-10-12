@@ -158,6 +158,7 @@ class TrainingExample(BaseModel):
 GoalStatus = Literal[
     "planning", "ready", "running", "paused", "complete", "failed", "cancelled"
 ]
+PauseReason = Literal["token_budget", "provider_quota"]
 PlannedTaskStatus = Literal[
     "pending", "running", "complete", "failed", "escalated", "blocked", "cancelled"
 ]
@@ -171,6 +172,11 @@ class GoalContract(BaseModel):
     confidence_threshold: float = Field(ge=0.0, le=1.0)
     status: GoalStatus = "planning"
     plan_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    token_budget: int | None = Field(default=None, ge=1)  # None = unlimited
+    tokens_used: int = Field(default=0, ge=0)  # platform-written
+    fallback_used: bool = False  # platform-written: failover happened this attempt
+    resume_after: datetime | None = None  # platform-written: provider_quota auto-resume time
+    pause_reason: PauseReason | None = None  # platform-written
     created_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("origin", "objective")
