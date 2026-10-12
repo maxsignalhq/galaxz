@@ -109,3 +109,14 @@ def test_fallback_with_blank_default_is_disabled(tmp_path, monkeypatch):
 
 def test_missing_config_file_is_none(tmp_path):
     assert load_fallback_provider_config(str(tmp_path / "nope.yaml")) is None
+
+
+def test_fallback_with_unresolved_api_key_or_base_url_is_disabled(tmp_path, monkeypatch):
+    monkeypatch.delenv("FB_KEY_NOPE", raising=False)
+    monkeypatch.delenv("FB_URL_NOPE", raising=False)
+    body = ("llm:\n  provider: ollama\n  model: m\n  fallback:\n"
+            "    provider: anthropic\n    model: x\n    {field}: ${{{var}}}\n")
+    assert load_fallback_provider_config(
+        _yaml(tmp_path, body.format(field="api_key", var="FB_KEY_NOPE"))) is None
+    assert load_fallback_provider_config(
+        _yaml(tmp_path, body.format(field="base_url", var="FB_URL_NOPE"))) is None

@@ -86,7 +86,19 @@ class PostgresGoalStore:
 
     def set_goal_status(self, goal_id: UUID, status: str) -> None:
         with self.engine.begin() as c:
-            c.execute(text("UPDATE goals SET status=:status WHERE goal_id=:id"), {"status": status, "id": str(goal_id)})
+            c.execute(
+                text("UPDATE goals SET status=:status, pause_reason=NULL, resume_after=NULL WHERE goal_id=:id"),
+                {"status": status, "id": str(goal_id)},
+            )
+
+    def reset_task_for_redispatch(self, task_id: UUID, expected_job_id: str | None) -> bool:
+        with self.engine.begin() as c:
+            result = c.execute(
+                text("UPDATE planned_tasks SET status='pending', job_id=NULL, error=NULL "
+                     "WHERE task_id=:id AND status='running' AND job_id IS NOT DISTINCT FROM :job"),
+                {"id": str(task_id), "job": expected_job_id},
+            )
+            return result.rowcount > 0
 
     def add_tokens_used(self, goal_id: UUID, tokens: int) -> None:
         with self.engine.begin() as c:

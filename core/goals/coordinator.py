@@ -14,6 +14,10 @@ from .substitution import PayloadResolutionError
 from .substitution import resolve_payload
 
 
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
 class DurableGoalCoordinator:
     def __init__(
         self,
@@ -62,15 +66,32 @@ class DurableGoalCoordinator:
         base = self.key(goal_id, task_id)
         return f"{base}:q{attempt}" if attempt else base
 
-    def _handle_provider_quota(self, goal_id: UUID, task, tier: str) -> bool:
-        """Reset the task for re-dispatch. Returns True when the goal was paused."""
-        goal = self.store.get_goal(goal_id)
+    def _last_quota_resume(self, goal_id: UUID) -> datetime | None:
+        latest = None
+        for event in self.store.events(goal_id):
+            if event["action"] == "resume" and event["reason"] == "provider_quota":
+                latest = _aware(datetime.fromisoformat(event["created_at"]))
+        return latest
+
+    def _handle_provider_quota(
+        self, goal_id: UUID, task, tier: str, expected_job_id: str | None, stale: bool
+    ) -> bool:
+        """Reset the task for re-dispatch. Returns True when this call paused the goal.
+
+        ``stale`` results (finished before the last quota resume, or already
+        superseded by a pause in the same pass) are only re-dispatched: they say
+        nothing about whether the primary is available now.
+        """
+        if not self.store.reset_task_for_redispatch(task.task_id, expected_job_id):
+            return False  # another reconciler already handled this result
         self.store.record_event(
             goal_id, actor="system", action="provider_quota", reason=tier,
             affected=[str(task.task_id)],
         )
-        self.store.update_task(task.task_id, status="pending", job_id=None, error=None)
-        if tier == "primary" and (goal.fallback_used or self.fallback_enabled):
+        if stale:
+            return False
+        goal = self.store.get_goal(goal_id)
+        if tier == "primary" and self.fallback_enabled:
             if not goal.fallback_used:
                 self.store.set_fallback_used(goal_id, True)
                 self.store.record_event(
@@ -103,10 +124,11 @@ class DurableGoalCoordinator:
             raise KeyError(str(goal_id))
         if goal.status not in ("ready", "paused", "running"):
             raise ValueError(f"goal is {goal.status}, cannot start")
+        resumed_from = goal.pause_reason if goal.status == "paused" else None
         if goal.status == "paused":
             self.store.clear_pause(goal_id)
         self.store.set_goal_status(goal_id, "running")
-        self.store.record_event(goal_id, actor=actor, action="resume")
+        self.store.record_event(goal_id, actor=actor, action="resume", reason=resumed_from)
         self.reconcile(goal_id)
 
     def reconcile(self, goal_id: UUID) -> None:
@@ -116,6 +138,8 @@ class DurableGoalCoordinator:
         tasks = self.store.get_tasks(goal_id)
         by_id = {task.task_id: task for task in tasks}
         quota_counts = self._quota_counts(goal_id)
+        last_quota_resume = self._last_quota_resume(goal_id)
+        paused_for_quota = False
 
         for task in tasks:
             if task.status != "running":
@@ -136,10 +160,15 @@ class DurableGoalCoordinator:
                 state = result.get("status")
                 task_result = result.get("result") if isinstance(result.get("result"), dict) else result
                 if state == "failed" and result.get("failure_reason") == "provider_quota":
+                    stale = paused_for_quota or (
+                        last_quota_resume is not None
+                        and _aware(job.updated_at) <= last_quota_resume
+                    )
                     if self._handle_provider_quota(
-                        goal_id, task, result.get("model_tier", "primary")
+                        goal_id, task, result.get("model_tier", "primary"),
+                        execution["job_id"], stale,
                     ):
-                        return
+                        paused_for_quota = True
                 elif state == "complete" and (confidence or 0.0) >= goal.confidence_threshold:
                     self.store.update_task(
                         task.task_id, status="complete", confidence=confidence, result=task_result
@@ -157,6 +186,9 @@ class DurableGoalCoordinator:
                     return
             elif job.status in (JobStatus.failed, JobStatus.cancelled):
                 self.store.update_task(task.task_id, status="failed", error=job.status.value)
+
+        if paused_for_quota:
+            return
 
         tasks = self.store.get_tasks(goal_id)
         by_id = {task.task_id: task for task in tasks}
@@ -302,6 +334,7 @@ class DurableGoalCoordinator:
             task_id, status="running", error=None, result=None,
             confidence=None, job_id=str(job.job_id), resolved_payload=payload,
         )
+        self.store.clear_pause(goal_id)
         self.store.set_goal_status(goal_id, "running")
         self.store.record_event(
             goal_id, actor=actor, action="rerun", reason=reason,

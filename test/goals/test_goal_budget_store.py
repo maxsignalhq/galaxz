@@ -100,3 +100,34 @@ def test_goal_tree_exposes_budget_fields(tmp_path):
     assert tree["fallback_used"] is False
     assert tree["pause_reason"] is None
     assert tree["resume_after"] is None
+
+
+def test_set_goal_status_clears_stale_pause_metadata(tmp_path):
+    store = GoalStore(str(tmp_path / "g.db"))
+    goal = _goal()
+    store.create_goal(goal)
+    when = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    store.pause_with_reason(goal.goal_id, "provider_quota", when)
+    store.set_goal_status(goal.goal_id, "running")
+    got = store.get_goal(goal.goal_id)
+    assert got.pause_reason is None and got.resume_after is None
+
+
+def test_reset_task_for_redispatch_is_guarded_by_job_id(tmp_path):
+    from core.contracts import PlannedTask, ProjectNode
+
+    store = GoalStore(str(tmp_path / "g.db"))
+    goal = _goal()
+    project = ProjectNode(goal_id=goal.goal_id, title="p")
+    store.create_goal(goal)
+    task = PlannedTask(project_id=project.project_id, goal_id=goal.goal_id,
+                       skill="s", payload={})
+    store.save_plan(goal.goal_id, [project], [task], 0.9, gated=False)
+    store.update_task(task.task_id, status="running", job_id="job-1", error="x")
+    assert store.reset_task_for_redispatch(task.task_id, "other-job") is False
+    assert store.get_tasks(goal.goal_id)[0].status == "running"
+    assert store.reset_task_for_redispatch(task.task_id, "job-1") is True
+    assert store.reset_task_for_redispatch(task.task_id, "job-1") is False
+    reset = store.get_tasks(goal.goal_id)[0]
+    assert reset.status == "pending" and reset.error is None
+    assert store.task_execution(task.task_id)["job_id"] is None

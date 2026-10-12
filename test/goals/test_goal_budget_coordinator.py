@@ -215,3 +215,85 @@ def test_start_clears_failover_state(tmp_path):
     co.start(goal.goal_id)
     got = store.get_goal(goal.goal_id)
     assert got.fallback_used is False and got.pause_reason is None
+
+
+def _past():
+    return datetime.now(timezone.utc) - timedelta(seconds=1)
+
+
+def test_rerun_clears_stale_provider_quota_pause(tmp_path):
+    store, jobs, co, goal, (a, b) = _setup(tmp_path)
+    co.start(goal.goal_id)
+    store.update_task(a.task_id, status="failed", error="boom")
+    store.pause_with_reason(goal.goal_id, "provider_quota", _past())
+    store.set_fallback_used(goal.goal_id, True)
+    co.rerun(goal.goal_id, a.task_id, actor="t")
+    got = store.get_goal(goal.goal_id)
+    assert got.status == "running"
+    assert got.pause_reason is None and got.resume_after is None
+    assert got.fallback_used is False
+    store.set_goal_status(goal.goal_id, "paused")  # e.g. an escalation / manual pause
+    co.reconcile_all()
+    assert store.get_goal(goal.goal_id).status == "paused"
+
+
+def test_parallel_fallback_quota_results_cost_one_pause(tmp_path):
+    store, jobs, co, goal, tasks = _setup(tmp_path, tasks=3, parallel=True)
+    co.start(goal.goal_id)
+    store.set_fallback_used(goal.goal_id, True)  # post-failover: jobs ran on the fallback
+    for t in tasks:
+        _finish(jobs, co.key(goal.goal_id, t.task_id), {**QUOTA, "model_tier": "fallback"})
+    co.reconcile(goal.goal_id)
+    got = store.get_goal(goal.goal_id)
+    assert got.status == "paused" and got.pause_reason == "provider_quota"
+    assert [t.status for t in store.get_tasks(goal.goal_id)] == ["pending"] * 3
+    actions = [e["action"] for e in store.events(goal.goal_id)]
+    assert actions.count("pause") == 1
+
+    store.pause_with_reason(goal.goal_id, "provider_quota", _past())
+    co.reconcile_all()
+    got = store.get_goal(goal.goal_id)
+    assert got.status == "running" and got.fallback_used is False
+    for t in tasks:
+        assert jobs.get_job_by_idempotency_key(f"{co.key(goal.goal_id, t.task_id)}:q1")
+
+
+def test_result_finished_before_resume_is_stale_and_does_not_failover(tmp_path):
+    store, jobs, co, goal, (a, b) = _setup(tmp_path, parallel=True)
+    co.start(goal.goal_id)
+    store.set_fallback_used(goal.goal_id, True)
+    _finish(jobs, co.key(goal.goal_id, a.task_id), {**QUOTA, "model_tier": "fallback"})
+    co.reconcile(goal.goal_id)  # a's result pauses the goal; b still running
+    assert store.get_goal(goal.goal_id).status == "paused"
+    _finish(jobs, co.key(goal.goal_id, b.task_id), {**QUOTA, "model_tier": "primary"})
+    store.pause_with_reason(goal.goal_id, "provider_quota", _past())
+    co.reconcile_all()
+    got = store.get_goal(goal.goal_id)
+    assert got.status == "running" and got.fallback_used is False
+    actions = [e["action"] for e in store.events(goal.goal_id)]
+    assert actions.count("failover") == 0
+    assert jobs.get_job_by_idempotency_key(f"{co.key(goal.goal_id, b.task_id)}:q1")
+
+
+def test_same_quota_result_is_handled_once(tmp_path):
+    store, jobs, co, goal, (a, b) = _setup(tmp_path)
+    co.start(goal.goal_id)
+    _finish(jobs, co.key(goal.goal_id, a.task_id), {**QUOTA, "model_tier": "primary"})
+    stale_job_id = store.task_execution(a.task_id)["job_id"]
+    task = store.get_tasks(goal.goal_id)[0]
+    assert co._handle_provider_quota(goal.goal_id, task, "primary", stale_job_id, False) is False
+    # a second reconciler holding the same stale view must not record or re-dispatch again
+    assert co._handle_provider_quota(goal.goal_id, task, "primary", stale_job_id, False) is False
+    actions = [e["action"] for e in store.events(goal.goal_id)]
+    assert actions.count("provider_quota") == 1
+
+
+def test_fallback_flag_without_enabled_fallback_pauses_instead_of_hot_looping(tmp_path):
+    store, jobs, co, goal, (a, b) = _setup(tmp_path, fallback_enabled=False)
+    co.start(goal.goal_id)
+    store.set_fallback_used(goal.goal_id, True)  # persisted before the fallback was removed
+    _finish(jobs, co.key(goal.goal_id, a.task_id), {**QUOTA, "model_tier": "primary"})
+    co.reconcile(goal.goal_id)
+    got = store.get_goal(goal.goal_id)
+    assert got.status == "paused" and got.pause_reason == "provider_quota"
+    assert jobs.get_job_by_idempotency_key(f"{co.key(goal.goal_id, a.task_id)}:q1") is None

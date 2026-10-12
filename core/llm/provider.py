@@ -131,6 +131,8 @@ def load_fallback_provider_config(
         return None
     api_key = _resolve_env_vars(str(block["api_key"])) if block.get("api_key") else None
     base_url = _resolve_env_vars(str(block["base_url"])) if block.get("base_url") else None
+    if any("${" in value for value in (api_key, base_url) if value):
+        return None
     return ProviderConfig(
         provider=provider,
         model=model,

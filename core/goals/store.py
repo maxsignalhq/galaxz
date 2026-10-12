@@ -169,10 +169,25 @@ class GoalStore:
 
     def set_goal_status(self, goal_id: UUID, status: str) -> None:
         with self._lock:
+            # A plain status write is not a reasoned pause: drop any stale
+            # pause metadata so it cannot be mistaken for a live provider_quota pause.
             self._conn.execute(
-                "UPDATE goals SET status = ? WHERE goal_id = ?", (status, str(goal_id))
+                "UPDATE goals SET status = ?, pause_reason = NULL, resume_after = NULL "
+                "WHERE goal_id = ?",
+                (status, str(goal_id)),
             )
             self._conn.commit()
+
+    def reset_task_for_redispatch(self, task_id: UUID, expected_job_id: str | None) -> bool:
+        """Atomically return a running task to pending iff it still owns ``expected_job_id``."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE planned_tasks SET status = 'pending', job_id = NULL, error = NULL "
+                "WHERE task_id = ? AND status = 'running' AND job_id IS ?",
+                (str(task_id), expected_job_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
 
     def add_tokens_used(self, goal_id: UUID, tokens: int) -> None:
         with self._lock:
