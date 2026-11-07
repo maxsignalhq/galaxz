@@ -172,6 +172,24 @@ def scorecard_verify(envelope_path, public_key):
 
 
 @galaxz.group()
+def audit():
+    """Tamper-evident audit log."""
+
+
+@audit.command("verify")
+def audit_verify():
+    """Verify the audit hash chain. Exits 1 if it has been altered."""
+    from core.security.audit import default_audit_log
+
+    result = default_audit_log().verify_chain()
+    if result["valid"]:
+        click.echo(f"audit chain valid: {result['events']} event(s), head {result['head']}")
+        return
+    click.echo(f"audit chain BROKEN at sequence {result['broken_at']} ({result['events']} valid event(s) before it)")
+    sys.exit(1)
+
+
+@galaxz.group()
 def secret():
     """Encrypted secret references for tool skills."""
 
@@ -195,6 +213,13 @@ def secret_put(skill, repository, task):
         store = open_default_store()
     except (RuntimeError, ValueError) as exc:
         raise click.ClickException(f"{exc}. Set GALAXZ_SECRETS_KEY to a Fernet key.")
-    reference = store.put(value, SecretScope(configured_organization_id(), repository, task, skill))
+    organization = configured_organization_id()
+    reference = store.put(value, SecretScope(organization, repository, task, skill))
+    from core.security.audit import audit_event
+
+    audit_event(
+        "cli", "secret.put", "created",
+        secret_id=reference["secret_id"], skill=skill, repository=repository, task=task, organization_id=organization,
+    )
     click.echo("Use this as the whole value of a string in a task payload:", err=True)
     click.echo(f"${{{{ secrets.{reference['secret_id']} }}}}")

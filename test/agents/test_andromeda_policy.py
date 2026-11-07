@@ -140,3 +140,28 @@ def test_default_andromeda_loads_policy_from_config_and_creates_no_database(tmp_
     )
     assert andromeda.policy.enabled is True
     assert not (tmp_path / "data" / "policy.db").exists()  # grants DB is lazy
+
+
+def _audit_events():
+    from core.security.audit import default_audit_log
+
+    return [item["event"] for item in default_audit_log().export()]
+
+
+def test_denial_and_hold_are_written_to_the_audit_log(make):
+    andromeda, _, _ = make(PolicyRule(SKILL, DENY, origin="a2a:*", reason="no way"))
+    route(andromeda, origin="a2a:evil")
+    [deny] = _audit_events()
+    assert deny["action"] == "policy.deny" and deny["actor"] == "a2a:evil" and deny["reason"] == "no way"
+    assert deny["extra"] == {"skill": SKILL, "rule_index": 0}
+
+    andromeda, _, _ = make(PolicyRule(SKILL, REQUIRE_REVIEW, origin="a2a:*", reason="needs a human"))
+    route(andromeda, origin="a2a:other")
+    hold = _audit_events()[-1]
+    assert hold["action"] == "policy.hold" and hold["reason"] == "needs a human"
+
+
+def test_allowed_task_writes_no_policy_event(make):
+    andromeda, _, _ = make()
+    route(andromeda)
+    assert _audit_events() == []

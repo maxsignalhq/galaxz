@@ -149,3 +149,32 @@ def test_payload_without_references_is_unchanged(env):
         task=_task(origin="test", skill=SKILL, payload={"a": "b"})
     )
     assert result["status"] == "complete"
+
+
+def test_secret_resolution_and_refusals_are_audited_without_values(env):
+    from core.security.audit import default_audit_log
+
+    registry, store, tmp_path = env
+    reference = _secret(store)
+    _andromeda(env, ToolAgent()).route(task=_task(origin="goal-x", skill=SKILL, payload={"token": reference}))
+    _andromeda(env, ToolAgent()).route(task=_task(origin="goal-x", skill=SKILL, payload={"token": "${{ secrets.nope }}"}))
+    events = [item["event"] for item in default_audit_log().export() if item["event"]["action"].startswith("secret.")]
+    assert [(e["action"], e["reason"]) for e in events] == [
+        ("secret.resolve", "resolved"),
+        ("secret.resolve", "secret_reference_unavailable"),
+    ]
+    assert events[0]["actor"] == "goal-x"
+    assert events[0]["extra"]["skill"] == SKILL and events[0]["extra"]["count"] == 1
+    assert events[1]["extra"]["count"] == 0
+    assert TOKEN not in str(events)
+
+
+def test_payload_without_references_writes_no_secret_event(env):
+    from core.security.audit import default_audit_log
+
+    class Plain:
+        def run(self, skill_id, payload, context):
+            return {"result": {}, "confidence": 0.95}
+
+    _andromeda(env, Plain()).route(task=_task(origin="goal-x", skill=SKILL, payload={"a": "b"}))
+    assert [e for e in default_audit_log().export() if e["event"]["action"].startswith("secret.")] == []

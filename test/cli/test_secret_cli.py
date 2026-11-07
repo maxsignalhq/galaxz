@@ -56,3 +56,16 @@ def test_put_rejects_an_empty_value(tmp_path, monkeypatch):
     _env(tmp_path, monkeypatch)
     result = _put("--skill", SKILL, value="\n")
     assert result.exit_code != 0 and "empty" in result.output
+
+
+def test_put_is_audited_without_the_value(tmp_path, monkeypatch):
+    from core.security.audit import default_audit_log
+
+    _env(tmp_path, monkeypatch)
+    result = _put("--skill", SKILL, "--repository", "repo-1")
+    assert result.exit_code == 0
+    [event] = [item["event"] for item in default_audit_log().export()]
+    assert event["action"] == "secret.put" and event["actor"] == "cli" and event["reason"] == "created"
+    assert event["extra"]["skill"] == SKILL and event["extra"]["repository"] == "repo-1"
+    assert event["extra"]["organization_id"] == "org-1"
+    assert "tok-abc" not in str(event) and event["extra"]["secret_id"] in result.output

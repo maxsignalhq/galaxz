@@ -20,6 +20,10 @@ the working tree. It is intended to be reviewed before the next GitHub push.
 - Per-goal token budgets with usage metering, budget pause/resume, and provider
   quota failover to a fallback model (worker, coordinator, API, SQLite and
   PostgreSQL stores).
+- Audit logging: every state-changing or rejected API request and every policy
+  denial/hold is written to a hash-chained, tamper-evident log (`GALAXZ_AUDIT_DB`),
+  readable at `GET /audit/events`, verifiable with `GET /audit/verify` and
+  `galaxz audit verify`. Safe for concurrent threads and processes.
 - Secret references: `${{ secrets.<id> }}` in a `quasar.*` tool payload is resolved
   only while the tool runs (scoped to organization, repository and skill) and
   redacted from results and errors, so plaintext never reaches the goal, job,

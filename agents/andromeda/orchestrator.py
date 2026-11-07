@@ -31,6 +31,7 @@ from core.llm.provider import LLMQuotaError
 from core.nebula.store import MAX_SKILL_LESSONS, SKILL_NAMESPACE_PREFIX, NebulaStore
 from core.policy import DENY, REQUIRE_REVIEW, GrantStore, PolicyDecision, PolicyEngine, load_policy, payload_digest
 from core.pulsar.registry import PulsarRegistry
+from core.security.audit import audit_event
 from core.secrets.resolver import SecretResolutionError, SecretResolver, redact_structure
 from core.secrets import redact_secrets
 from orion.core.weights_loader import RoutingWeightsLoader
@@ -60,6 +61,7 @@ def _make_policy_node(policy: PolicyEngine, grants: GrantStore):
             decision = policy.evaluate_skill(skill, origin)
             if decision.action == DENY:
                 logger.warning("[policy] denied skill=%s origin=%s rule=%s", skill, origin, decision.rule_index)
+                audit_event(origin or "unknown", "policy.deny", decision.reason, skill=skill, rule_index=decision.rule_index)
                 return {
                     "failure_reason": "policy_denied",
                     "assignment_reason": f"policy denied: {decision.reason}",
@@ -73,6 +75,7 @@ def _make_policy_node(policy: PolicyEngine, grants: GrantStore):
                 logger.info("[policy] grant consumed skill=%s origin=%s", skill, origin)
                 continue
             logger.warning("[policy] held for review skill=%s origin=%s rule=%s", skill, origin, decision.rule_index)
+            audit_event(origin or "unknown", "policy.hold", decision.reason, skill=skill, rule_index=decision.rule_index)
             return {
                 "failure_reason": "policy_requires_review",
                 "assignment_reason": f"policy requires review: {decision.reason}",
@@ -367,15 +370,22 @@ class Andromeda:
 
         # Secret references are swapped for values only here, for the duration of the call;
         # state, task log, policy digest and review queue keep the reference.
+        repository_id = self._secret_repository_id(state)
         try:
             payload, secret_values = self.secret_resolver.resolve(
-                payload,
-                skill_id=skill_id,
-                repository_id=self._secret_repository_id(state),
-                task_id=state["task_id"],
+                payload, skill_id=skill_id, repository_id=repository_id, task_id=state["task_id"]
             )
         except SecretResolutionError as exc:
+            audit_event(
+                state.get("origin") or "unknown", "secret.resolve", exc.reason,
+                skill=skill_id, task_id=state["task_id"], repository_id=repository_id, count=0,
+            )
             return {"status": "failed", "failure_reason": exc.reason, "confidence": 0.0}
+        if secret_values:
+            audit_event(
+                state.get("origin") or "unknown", "secret.resolve", "resolved",
+                skill=skill_id, task_id=state["task_id"], repository_id=repository_id, count=len(secret_values),
+            )
 
         try:
             agent = self._agents.get(agent_id)
