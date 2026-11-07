@@ -18,6 +18,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from boot import boot
+from agents.andromeda.middleware.audit import AuditMiddleware
 from agents.andromeda.middleware.auth import ApiKeyMiddleware
 from agents.andromeda.orchestrator import Andromeda
 from agents.andromeda.planner import PlanValidationError
@@ -36,6 +37,7 @@ from core.repositories import RepositoryAccessError, RepositoryStore
 from core.github import GitHubAppClient, GitHubClient, PullRequestEvidence, WebhookStore
 from core.scorecards import ScorecardError, ScorecardSigner, build_scorecards, load_signer
 from core.security import ArtifactScanOverride, scan_artifacts
+from core.security.audit import default_audit_log
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
 from core.nebula.store import SKILL_NAMESPACE_PREFIX
@@ -168,6 +170,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(ApiKeyMiddleware)
+app.add_middleware(AuditMiddleware)  # added last = outermost, so it sees the 401s
+
+@app.get("/audit/events")
+def audit_events(after: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=1000)):
+    return {"events": default_audit_log().export(after=after, limit=limit)}
+
+
+@app.get("/audit/verify")
+def audit_verify():
+    return default_audit_log().verify_chain()
+
 
 _a2a_config_cache: A2AConfig | None = None
 

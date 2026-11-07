@@ -20,6 +20,10 @@ the working tree. It is intended to be reviewed before the next GitHub push.
 - Per-goal token budgets with usage metering, budget pause/resume, and provider
   quota failover to a fallback model (worker, coordinator, API, SQLite and
   PostgreSQL stores).
+- Audit logging: every state-changing or rejected API request and every policy
+  denial/hold is written to a hash-chained, tamper-evident log (`GALAXZ_AUDIT_DB`),
+  readable at `GET /audit/events`, verifiable with `GET /audit/verify` and
+  `galaxz audit verify`. Safe for concurrent threads and processes.
 - PostgreSQL schema administration with explicit Alembic migrations, advisory
   migration locking, populated-database upgrade coverage, and fail-closed
   schema compatibility checks.

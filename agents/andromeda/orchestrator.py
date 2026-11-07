@@ -30,6 +30,7 @@ from core.llm.provider import LLMQuotaError
 from core.nebula.store import MAX_SKILL_LESSONS, SKILL_NAMESPACE_PREFIX, NebulaStore
 from core.policy import DENY, REQUIRE_REVIEW, GrantStore, PolicyDecision, PolicyEngine, load_policy, payload_digest
 from core.pulsar.registry import PulsarRegistry
+from core.security.audit import audit_event
 from orion.core.weights_loader import RoutingWeightsLoader
 from workspace.config import load_workspace_config
 
@@ -57,6 +58,7 @@ def _make_policy_node(policy: PolicyEngine, grants: GrantStore):
             decision = policy.evaluate_skill(skill, origin)
             if decision.action == DENY:
                 logger.warning("[policy] denied skill=%s origin=%s rule=%s", skill, origin, decision.rule_index)
+                audit_event(origin or "unknown", "policy.deny", decision.reason, skill=skill, rule_index=decision.rule_index)
                 return {
                     "failure_reason": "policy_denied",
                     "assignment_reason": f"policy denied: {decision.reason}",
@@ -70,6 +72,7 @@ def _make_policy_node(policy: PolicyEngine, grants: GrantStore):
                 logger.info("[policy] grant consumed skill=%s origin=%s", skill, origin)
                 continue
             logger.warning("[policy] held for review skill=%s origin=%s rule=%s", skill, origin, decision.rule_index)
+            audit_event(origin or "unknown", "policy.hold", decision.reason, skill=skill, rule_index=decision.rule_index)
             return {
                 "failure_reason": "policy_requires_review",
                 "assignment_reason": f"policy requires review: {decision.reason}",

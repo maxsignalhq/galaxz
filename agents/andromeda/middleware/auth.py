@@ -37,11 +37,17 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         route_key = (request.method.upper(), request.url.path)
-        if route_key in _EXEMPT_ROUTES or not self._key:
+        if route_key in _EXEMPT_ROUTES:
+            request.state.principal = {"id": "exempt-route", "kind": "exempt-route"}
+            return await call_next(request)
+        if not self._key:
+            request.state.principal = {"id": "anonymous", "kind": "anonymous"}
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization", "")
         if auth_header == f"Bearer {self._key}":
+            request.state.principal = {"id": "api-key", "kind": "api-key"}
             return await call_next(request)
 
+        request.state.principal = {"id": "unauthenticated", "kind": "unauthenticated"}
         return JSONResponse({"error": "unauthorized"}, status_code=401)

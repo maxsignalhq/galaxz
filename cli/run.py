@@ -169,3 +169,21 @@ def scorecard_verify(envelope_path, public_key):
     subject = card.get("subject", {})
     click.echo(f"VALID: {card.get('issuer')} attests {subject.get('agent_id')} / {subject.get('skill_id')}")
     click.echo(json.dumps(card.get("metrics", {}), indent=2))
+
+
+@galaxz.group()
+def audit():
+    """Tamper-evident audit log."""
+
+
+@audit.command("verify")
+def audit_verify():
+    """Verify the audit hash chain. Exits 1 if it has been altered."""
+    from core.security.audit import default_audit_log
+
+    result = default_audit_log().verify_chain()
+    if result["valid"]:
+        click.echo(f"audit chain valid: {result['events']} event(s), head {result['head']}")
+        return
+    click.echo(f"audit chain BROKEN at sequence {result['broken_at']} ({result['events']} valid event(s) before it)")
+    sys.exit(1)

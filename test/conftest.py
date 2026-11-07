@@ -19,6 +19,7 @@ _DEFAULT_DATABASES = {
     "REPOSITORY_DB_PATH": "repositories.db",
     "JOB_DB_PATH": "jobs.db",
     "POLICY_DB_PATH": "policy.db",
+    "GALAXZ_AUDIT_DB": "audit.db",
 }
 
 
