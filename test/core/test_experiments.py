@@ -1,3 +1,5 @@
+import pytest
+
 from core.evaluation import ExperimentSpec, compare_experiments
 
 
@@ -9,5 +11,5 @@ def test_experiment_spec_pins_all_versions():
 def test_experiment_comparison_reports_metrics_and_uncertainty():
     report = compare_experiments([{"quality": 0.8, "latency_ms": 100, "cost_usd": 0.1, "escalated": 0}] * 20, minimum_samples=20)
     assert report["insufficient_samples"] is False
-    assert report["metrics"]["quality"]["mean"] == 0.8
-    assert report["metrics"]["quality"]["standard_error"] == 0
+    assert report["metrics"]["quality"]["mean"] == pytest.approx(0.8)
+    assert report["metrics"]["quality"]["standard_error"] == pytest.approx(0, abs=1e-9)
