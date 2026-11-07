@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +38,18 @@ class SecretScope:
         return values
 
 
+ANY_TASK = "*"
+
+
+def _scope_matches(stored: tuple[str, str, str, str], requested: tuple[str, str, str, str]) -> bool:
+    """A stored task_id of ``*`` matches any task; every other field must be equal."""
+    organization, repository, task, policy = stored
+    return (
+        (organization, repository, policy) == (requested[0], requested[1], requested[3])
+        and task in (ANY_TASK, requested[2])
+    )
+
+
 class SecretStore:
     def __init__(self, path: str | Path, key_provider: ManagedKeyProvider):
         try:
@@ -45,7 +58,8 @@ class SecretStore:
             raise RuntimeError("cryptography is required for encrypted secret storage") from exc
         self._fernet = Fernet(key_provider.key())
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self._db = sqlite3.connect(path)
+        self._db = sqlite3.connect(path, check_same_thread=False)
+        self._lock = threading.Lock()
         self._db.execute("CREATE TABLE IF NOT EXISTS secret_references (secret_id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, repository_id TEXT NOT NULL, task_id TEXT NOT NULL, policy TEXT NOT NULL, ciphertext BLOB NOT NULL, created_at TEXT NOT NULL)")
         self._db.commit()
 
@@ -56,13 +70,15 @@ class SecretStore:
         secret_id = str(uuid4())
         created_at = datetime.now(timezone.utc).isoformat()
         ciphertext = self._fernet.encrypt(value.encode())
-        self._db.execute("INSERT INTO secret_references VALUES (?, ?, ?, ?, ?, ?, ?)", (secret_id, organization, repository, task, policy, ciphertext, created_at))
-        self._db.commit()
+        with self._lock:
+            self._db.execute("INSERT INTO secret_references VALUES (?, ?, ?, ?, ?, ?, ?)", (secret_id, organization, repository, task, policy, ciphertext, created_at))
+            self._db.commit()
         return {"secret_id": secret_id, "organization_id": organization, "repository_id": repository, "task_id": task, "policy": policy, "created_at": created_at}
 
     def resolve(self, secret_id: str, scope: SecretScope) -> str:
-        row = self._db.execute("SELECT organization_id,repository_id,task_id,policy,ciphertext FROM secret_references WHERE secret_id=?", (secret_id,)).fetchone()
-        if row is None or tuple(row[:4]) != scope.as_tuple():
+        with self._lock:
+            row = self._db.execute("SELECT organization_id,repository_id,task_id,policy,ciphertext FROM secret_references WHERE secret_id=?", (secret_id,)).fetchone()
+        if row is None or not _scope_matches(tuple(row[:4]), scope.as_tuple()):
             raise PermissionError("secret reference is unavailable for this scope")
         return self._fernet.decrypt(row[4]).decode()
 

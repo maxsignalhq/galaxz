@@ -20,6 +20,10 @@ the working tree. It is intended to be reviewed before the next GitHub push.
 - Per-goal token budgets with usage metering, budget pause/resume, and provider
   quota failover to a fallback model (worker, coordinator, API, SQLite and
   PostgreSQL stores).
+- Secret references: `${{ secrets.<id> }}` in a `quasar.*` tool payload is resolved
+  only while the tool runs (scoped to organization, repository and skill) and
+  redacted from results and errors, so plaintext never reaches the goal, job,
+  task-log or review stores. Create secrets with `galaxz secret put`.
 - PostgreSQL schema administration with explicit Alembic migrations, advisory
   migration locking, populated-database upgrade coverage, and fail-closed
   schema compatibility checks.
