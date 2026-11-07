@@ -1,6 +1,6 @@
 # Audit logging — design
 
-Date: 2026-11-07. Status: approved by the maintainer ("spec them out and start implementing them").
+Date: 2026-11-07. Status: drafted at the maintainer's request ("spec them out and start implementing them"); not yet reviewed.
 First of the v2 identity/governance items; see `2026-11-07-v2-identity-governance-overview.md`.
 
 ## Problem
@@ -23,7 +23,9 @@ thread, and a read-then-insert append that two processes (API and worker) can ra
   Postgres table is a follow-up inside the accounts work.
 - No external anchoring: the chain proves *modification or removal of an earlier record*; it cannot
   prove that the newest records were not truncated.
-- No retention/rotation policy yet.
+- No retention/rotation policy yet. Until there is one, **rejected-request volume is unbounded**: every 401/403
+  is a row, so an unauthenticated client can grow the file. A retention/rotation (and a per-source rate limit on
+  denied events) is the first follow-up.
 - No per-user attribution beyond today's principals (the accounts spec adds real users).
 
 ## Anti-goals
