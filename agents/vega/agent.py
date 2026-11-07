@@ -5,6 +5,7 @@ from typing import Optional
 from agents.vega.pipeline import run_vega_pipeline
 from core.aether.client import get_aether_client
 from core.contracts import SkillDefinition, SkillManifest
+from core.llm.provider import LLMQuotaError
 from core.pulsar.registry import PulsarRegistry
 
 HEARTBEAT_STREAM = "galaxz.pulsar.heartbeat"
@@ -177,6 +178,8 @@ class VegaAgent:
                     config_path=context.get("config_path", self.config_path),
                     source_type=payload.get("source_type", "plain"),
                 )
+            except LLMQuotaError:
+                raise
             except Exception as exc:
                 return {
                     "result": self._fallback_test_cases(raw_requirements),

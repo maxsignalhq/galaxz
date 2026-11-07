@@ -1,6 +1,8 @@
+import contextvars
 import os
 import re
 from concurrent.futures import TimeoutError
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Optional
 
@@ -11,6 +13,24 @@ from core.llm.limiter import ProviderLimiter
 
 _limiter = ProviderLimiter()
 
+_QUOTA_ERRORS = tuple(
+    err
+    for err in (
+        getattr(litellm, "RateLimitError", None),
+        getattr(litellm, "BudgetExceededError", None),
+    )
+    if err is not None
+)
+
+
+class LLMQuotaError(RuntimeError):
+    """The provider rejected the call because quota or rate limit is exhausted."""
+
+
+class UsageMeter:
+    def __init__(self) -> None:
+        self.tokens = 0
+
 
 @dataclass
 class ProviderConfig:
@@ -19,6 +39,25 @@ class ProviderConfig:
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     max_concurrent: Optional[int] = None
+
+
+_meter: contextvars.ContextVar[Optional[UsageMeter]] = contextvars.ContextVar(
+    "llm_usage_meter", default=None
+)
+_override: contextvars.ContextVar[Optional[ProviderConfig]] = contextvars.ContextVar(
+    "llm_provider_override", default=None
+)
+
+
+@contextmanager
+def metered_call(meter: UsageMeter, override: Optional[ProviderConfig] = None):
+    meter_token = _meter.set(meter)
+    override_token = _override.set(override)
+    try:
+        yield meter
+    finally:
+        _meter.reset(meter_token)
+        _override.reset(override_token)
 
 
 def effective_max_concurrent(config: ProviderConfig) -> int:
@@ -75,12 +114,42 @@ def load_provider_config(config_path: str = "config/providers.yaml") -> Provider
     )
 
 
+def load_fallback_provider_config(
+    config_path: str = "config/providers.yaml",
+) -> Optional[ProviderConfig]:
+    """Platform fallback model from ``llm.fallback``; None when absent or unresolved."""
+    if not os.path.exists(config_path):
+        return None
+    with open(config_path) as f:
+        raw = yaml.safe_load(f) or {}
+    block = (raw.get("llm") or {}).get("fallback")
+    if not block:
+        return None
+    provider = _resolve_env_vars(str(block.get("provider") or "")).strip()
+    model = _resolve_env_vars(str(block.get("model") or "")).strip()
+    if not provider or not model or "${" in provider or "${" in model:
+        return None
+    api_key = _resolve_env_vars(str(block["api_key"])) if block.get("api_key") else None
+    base_url = _resolve_env_vars(str(block["base_url"])) if block.get("base_url") else None
+    if any("${" in value for value in (api_key, base_url) if value):
+        return None
+    return ProviderConfig(
+        provider=provider,
+        model=model,
+        api_key=api_key or None,
+        base_url=base_url or None,
+    )
+
+
 def call_llm(
     messages: list[dict],
     config: ProviderConfig,
     system_prompt: str = "",
 ) -> tuple[str, int, int]:
     messages = list(messages)
+    override = _override.get()
+    if override is not None:
+        config = override
 
     use_system_role = True
     if (
@@ -129,11 +198,17 @@ def call_llm(
     except TimeoutError as e:
         future.cancel()
         raise RuntimeError(f"LLM call timed out after {timeout_s:.1f} seconds") from e
+    except _QUOTA_ERRORS as e:
+        raise LLMQuotaError(f"LLM quota exhausted: {e}") from e
     except Exception as e:
         raise RuntimeError(f"LLM call failed: {e}") from e
 
     text = response.choices[0].message.content
     prompt_tokens = response.usage.prompt_tokens
     output_tokens = response.usage.completion_tokens
+
+    meter = _meter.get()
+    if meter is not None:
+        meter.tokens += prompt_tokens + output_tokens
 
     return text, prompt_tokens, output_tokens

@@ -34,3 +34,22 @@ def test_project_node_defaults():
     p = ProjectNode(goal_id=uuid.uuid4(), title="API layer")
     assert p.description == ""
     assert isinstance(p.project_id, uuid.UUID)
+
+
+def test_goal_budget_defaults():
+    g = GoalContract(origin="t", objective="x", confidence_threshold=0.65)
+    assert g.token_budget is None
+    assert g.tokens_used == 0
+    assert g.fallback_used is False
+    assert g.resume_after is None
+    assert g.pause_reason is None
+
+
+def test_goal_token_budget_must_be_positive():
+    with pytest.raises(ValidationError):
+        GoalContract(origin="t", objective="x", confidence_threshold=0.65, token_budget=0)
+
+
+def test_goal_pause_reason_is_constrained():
+    with pytest.raises(ValidationError):
+        GoalContract(origin="t", objective="x", confidence_threshold=0.65, pause_reason="bogus")

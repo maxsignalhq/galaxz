@@ -17,6 +17,9 @@ the working tree. It is intended to be reviewed before the next GitHub push.
   PostgreSQL/SQLite repository selection.
 - Goal/project hierarchy with dependency-aware durable execution, pause/resume,
   review gating, result substitution, and Prism goal visibility.
+- Per-goal token budgets with usage metering, budget pause/resume, and provider
+  quota failover to a fallback model (worker, coordinator, API, SQLite and
+  PostgreSQL stores).
 - PostgreSQL schema administration with explicit Alembic migrations, advisory
   migration locking, populated-database upgrade coverage, and fail-closed
   schema compatibility checks.

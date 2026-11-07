@@ -249,6 +249,11 @@ class GoalRequest(BaseModel):
     confidence_threshold: float = 0.65
     repository_id: str | None = None
     base_revision: str = "HEAD"
+    token_budget: int | None = None
+
+
+class GoalResumeRequest(BaseModel):
+    token_budget: int | None = None
 
 
 class RepositoryRequest(BaseModel):
@@ -992,10 +997,13 @@ def _release_goal_task_after_review(item: dict, held: bool) -> None:
 
 @app.post("/goals", status_code=202)
 def create_goal(req: GoalRequest):
+    if req.token_budget is not None and req.token_budget < 1:
+        raise HTTPException(status_code=422, detail="token_budget must be >= 1")
     goal = GoalContract(
         origin="api",
         objective=req.objective,
         confidence_threshold=req.confidence_threshold,
+        token_budget=req.token_budget,
     )
     workspace = _read_workspace_path()
     if workspace:
@@ -1154,7 +1162,7 @@ async def github_webhook(request: Request):
 
 
 @app.post("/goals/{goal_id}/resume", status_code=202)
-def resume_goal(goal_id: str):
+def resume_goal(goal_id: str, req: GoalResumeRequest = GoalResumeRequest()):
     try:
         gid = UUID(goal_id)
     except ValueError:
@@ -1164,6 +1172,10 @@ def resume_goal(goal_id: str):
         raise HTTPException(status_code=404, detail="goal not found")
     if goal.status not in ("ready", "paused"):
         raise HTTPException(status_code=409, detail=f"goal is {goal.status}, cannot resume")
+    if req.token_budget is not None:
+        if req.token_budget < 1:
+            raise HTTPException(status_code=422, detail="token_budget must be >= 1")
+        _andromeda.goal_store.set_token_budget(gid, req.token_budget)
     _goal_coordinator().start(gid, actor="api")
     return _andromeda.goal_store.goal_tree(gid)
 

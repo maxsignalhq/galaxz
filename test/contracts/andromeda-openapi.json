@@ -283,12 +283,40 @@
               }
             ],
             "title": "Repository Id"
+          },
+          "token_budget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Budget"
           }
         },
         "required": [
           "objective"
         ],
         "title": "GoalRequest",
+        "type": "object"
+      },
+      "GoalResumeRequest": {
+        "properties": {
+          "token_budget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Budget"
+          }
+        },
+        "title": "GoalResumeRequest",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1628,6 +1656,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoalResumeRequest",
+                "default": {}
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "content": {

@@ -6,6 +6,7 @@ from typing import Optional
 import yaml
 
 from agents.rigel.execution import ExecutionResult
+from core.llm.provider import LLMQuotaError
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,8 @@ def _self_critique(skill_id: str, payload: dict, result: dict, llm_client, parse
             "score": float(parsed["score"]),
             "gaps": parsed.get("gaps", []),
         }
+    except LLMQuotaError:
+        raise
     except Exception:
         return {"score": parse_error_fallback, "gaps": ["self_critique_parse_error"]}
 

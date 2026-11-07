@@ -26,6 +26,7 @@ from agents.vega.agent import VegaAgent
 from core.artifacts.store import ArtifactStore
 from core.contracts import TaskContract
 from core.goals.store import GoalStore
+from core.llm.provider import LLMQuotaError
 from core.nebula.store import MAX_SKILL_LESSONS, SKILL_NAMESPACE_PREFIX, NebulaStore
 from core.policy import DENY, REQUIRE_REVIEW, GrantStore, PolicyDecision, PolicyEngine, load_policy, payload_digest
 from core.pulsar.registry import PulsarRegistry
@@ -115,6 +116,8 @@ def _after_load_check(state: AndromedaState) -> str:
 
 def _make_after_execute(completion_threshold: float, failure_threshold: float):
     def _after_execute(state: AndromedaState) -> str:
+        if state.get("failure_reason") == "provider_quota":
+            return "quota_exhausted"
         confidence = state.get("confidence") or 0.0
         # A caller-supplied TaskContract.confidence_threshold overrides the agent's
         # global default completion threshold; the failure threshold stays global.
@@ -140,6 +143,14 @@ def _after_handle_failure(state: AndromedaState) -> str:
 def _complete_node(state: AndromedaState) -> dict:
     return {
         "status": "complete",
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _quota_exhausted_node(state: AndromedaState) -> dict:
+    return {
+        "status": "failed",
+        "failure_reason": "provider_quota",
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -274,6 +285,7 @@ class Andromeda:
         g.add_node("escalate", escalate)
         g.add_node("complete", _complete_node)
         g.add_node("no_agent_found", _no_agent_found_node)
+        g.add_node("quota_exhausted", _quota_exhausted_node)
 
         g.set_entry_point("policy_check")
 
@@ -298,6 +310,7 @@ class Andromeda:
             "complete": "complete",
             "handle_failure": "handle_failure",
             "escalate": "escalate",
+            "quota_exhausted": "quota_exhausted",
         })
         g.add_conditional_edges("handle_failure", _after_handle_failure, {
             "skill_match": "skill_match",
@@ -306,6 +319,7 @@ class Andromeda:
         g.add_edge("escalate", END)
         g.add_edge("complete", END)
         g.add_edge("no_agent_found", END)
+        g.add_edge("quota_exhausted", END)
 
         return g.compile()
 
@@ -383,6 +397,12 @@ class Andromeda:
                 "execution_result": result.get("execution_result", None),
                 "externally_calibrated": result.get("externally_calibrated", False),
                 "status": "complete",
+            }
+        except LLMQuotaError:
+            return {
+                "status": "failed",
+                "failure_reason": "provider_quota",
+                "confidence": 0.0,
             }
         except Exception as e:
             import traceback
