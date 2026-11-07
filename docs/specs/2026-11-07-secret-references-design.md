@@ -1,6 +1,6 @@
 # Secret references — design
 
-Date: 2026-11-07. Status: approved by the maintainer ("spec it out and then implement it").
+Date: 2026-11-07. Status: drafted at the maintainer's request ("spec it out and then implement it"); not yet reviewed.
 Wires the existing `core/secrets/` library into task execution.
 
 ## Intent
