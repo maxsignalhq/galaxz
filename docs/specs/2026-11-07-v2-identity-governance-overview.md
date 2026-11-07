@@ -1,6 +1,6 @@
 # v2 identity and governance — overview and sequencing
 
-Date: 2026-11-07. Status: approved by the maintainer ("spec them out and start implementing them").
+Date: 2026-11-07. Status: drafted at the maintainer's request ("spec them out and start implementing them"); not yet reviewed.
 
 CLAUDE.md lists these as the open v2 items: audit logging, multi-tenancy, user accounts/roles,
 OAuth/SSO, per-agent authentication, and executing fine-tune runs. They depend on each other, so
