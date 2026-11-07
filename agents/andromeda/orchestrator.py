@@ -373,7 +373,8 @@ class Andromeda:
         repository_id = self._secret_repository_id(state)
         try:
             payload, secret_values = self.secret_resolver.resolve(
-                payload, skill_id=skill_id, repository_id=repository_id, task_id=state["task_id"]
+                payload, skill_id=skill_id, repository_id=repository_id, task_id=state["task_id"],
+                organization_id=state.get("organization_id"),
             )
         except SecretResolutionError as exc:
             audit_event(
@@ -520,6 +521,7 @@ class Andromeda:
             status="routing",
             issued_at=task.created_at.isoformat(),
             confidence_threshold=task.confidence_threshold,
+            organization_id=task.organization_id,
         )
 
         self.task_log.write(initial_state.model_copy(update={"status": "received"}))

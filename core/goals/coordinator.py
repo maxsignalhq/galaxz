@@ -241,6 +241,7 @@ class DurableGoalCoordinator:
                 payload=payload,
                 confidence_threshold=goal.confidence_threshold,
                 workspace_root=goal.workspace_root,
+                organization_id=goal.organization_id,
             )
             job = self.jobs.enqueue(
                 task_id=contract.task_id,

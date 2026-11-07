@@ -63,7 +63,7 @@ queue, repositories and memory have none.
 | Orion (fine-tune candidates, lessons, scorecards) | **B2**, separate PR | Orion is a separate service with its own stores; scope after the core path is proven |
 | Pulsar registry, LLM limiter, provider config | **global** | agents are platform resources shared by all tenants |
 | Audit log | **global**, `organization_id` recorded per event | one tamper-evident chain; `audit:read` stays admin-only; events gain an `organization_id` field so exports can be filtered |
-| Secrets | already scoped | `SecretScope.organization_id` is unchanged |
+| Secrets | already scoped | `SecretScope.organization_id` is unchanged; as of B1 the resolver uses the task's organization (a `default` task keeps using `GALAXZ_ORGANIZATION_ID`) |
 
 The organization is stamped from the authenticated principal when a row is created and never changes.
 `TaskContract` gains an optional `organization_id` (absent = `default`), set by Andromeda from the
