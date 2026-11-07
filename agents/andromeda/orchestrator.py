@@ -25,12 +25,15 @@ from agents.rigel.agent import RigelAgent
 from agents.vega.agent import VegaAgent
 from core.artifacts.store import ArtifactStore
 from core.contracts import TaskContract
+from core.goals.executor import goal_id_from_origin
 from core.goals.store import GoalStore
 from core.llm.provider import LLMQuotaError
 from core.nebula.store import MAX_SKILL_LESSONS, SKILL_NAMESPACE_PREFIX, NebulaStore
 from core.policy import DENY, REQUIRE_REVIEW, GrantStore, PolicyDecision, PolicyEngine, load_policy, payload_digest
 from core.pulsar.registry import PulsarRegistry
 from core.security.audit import audit_event
+from core.secrets.resolver import SecretResolutionError, SecretResolver, redact_structure
+from core.secrets import redact_secrets
 from orion.core.weights_loader import RoutingWeightsLoader
 from workspace.config import load_workspace_config
 
@@ -239,6 +242,7 @@ class Andromeda:
         nebula: Optional[NebulaStore] = None,
         policy: Optional[PolicyEngine] = None,
         policy_grants: Optional[GrantStore] = None,
+        secret_resolver: Optional[SecretResolver] = None,
     ):
         self.registry = registry
         self.task_log = task_log
@@ -251,6 +255,7 @@ class Andromeda:
         self.nebula = nebula or NebulaStore(db_path=os.getenv("NEBULA_DB_PATH", "data/nebula.db"))
         self.policy = policy if policy is not None else load_policy()
         self.policy_grants = policy_grants or GrantStore()
+        self.secret_resolver = secret_resolver or SecretResolver()
         self.goal_store = goal_store or GoalStore()
         self.goal_planner = GoalPlanner(registry)
         self.goal_runner = GoalRunner(self, self.goal_store)
@@ -352,11 +357,35 @@ class Andromeda:
                     self.routing_weights.source,
                 )
 
+    def _secret_repository_id(self, state) -> str:
+        goal_id = goal_id_from_origin(state.get("origin") or "")
+        binding = self.goal_store.repository_binding(goal_id) if goal_id else None
+        return binding["repository_id"] if binding else "default"
+
     def _execute_node(self, state: AndromedaState) -> dict:
         agent_id = state.get("assigned_agent", "")
         skill_id = state["required_skills"][0]
         payload = state.get("payload", {})
         context = {**state.get("context", {}), "task_id": state["task_id"]}
+
+        # Secret references are swapped for values only here, for the duration of the call;
+        # state, task log, policy digest and review queue keep the reference.
+        repository_id = self._secret_repository_id(state)
+        try:
+            payload, secret_values = self.secret_resolver.resolve(
+                payload, skill_id=skill_id, repository_id=repository_id, task_id=state["task_id"]
+            )
+        except SecretResolutionError as exc:
+            audit_event(
+                state.get("origin") or "unknown", "secret.resolve", exc.reason,
+                skill=skill_id, task_id=state["task_id"], repository_id=repository_id, count=0,
+            )
+            return {"status": "failed", "failure_reason": exc.reason, "confidence": 0.0}
+        if secret_values:
+            audit_event(
+                state.get("origin") or "unknown", "secret.resolve", "resolved",
+                skill=skill_id, task_id=state["task_id"], repository_id=repository_id, count=len(secret_values),
+            )
 
         try:
             agent = self._agents.get(agent_id)
@@ -366,7 +395,7 @@ class Andromeda:
                     "failure_reason": f"unknown agent: {agent_id}",
                     "confidence": 0.0,
                 }
-            result = agent.run(skill_id, payload, context)
+            result = redact_structure(agent.run(skill_id, payload, context), secret_values)
 
             # A generated program is not complete until the exact workspace
             # artifact has been executed successfully.  Previously an
@@ -408,11 +437,14 @@ class Andromeda:
                 "confidence": 0.0,
             }
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            if secret_values:
+                logger.error("tool execution failed: %s", redact_secrets(str(e), secret_values))
+            else:
+                import traceback
+                traceback.print_exc()
             return {
                 "status": "failed",
-                "failure_reason": str(e),
+                "failure_reason": redact_secrets(str(e), secret_values),
                 "confidence": 0.0,
             }
 

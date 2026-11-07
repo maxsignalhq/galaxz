@@ -24,6 +24,10 @@ the working tree. It is intended to be reviewed before the next GitHub push.
   denial/hold is written to a hash-chained, tamper-evident log (`GALAXZ_AUDIT_DB`),
   readable at `GET /audit/events`, verifiable with `GET /audit/verify` and
   `galaxz audit verify`. Safe for concurrent threads and processes.
+- Secret references: `${{ secrets.<id> }}` in a `quasar.*` tool payload is resolved
+  only while the tool runs (scoped to organization, repository and skill) and
+  redacted from results and errors, so plaintext never reaches the goal, job,
+  task-log or review stores. Create secrets with `galaxz secret put`.
 - PostgreSQL schema administration with explicit Alembic migrations, advisory
   migration locking, populated-database upgrade coverage, and fail-closed
   schema compatibility checks.

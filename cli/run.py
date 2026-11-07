@@ -187,3 +187,39 @@ def audit_verify():
         return
     click.echo(f"audit chain BROKEN at sequence {result['broken_at']} ({result['events']} valid event(s) before it)")
     sys.exit(1)
+
+
+@galaxz.group()
+def secret():
+    """Encrypted secret references for tool skills."""
+
+
+@secret.command("put")
+@click.option("--skill", required=True, help="The only skill allowed to use this secret, e.g. quasar.github.create_issue")
+@click.option("--repository", default="default", show_default=True, help="Repository the secret is bound to")
+@click.option("--task", default="*", show_default=True, help="Task id, or * for any task")
+def secret_put(skill, repository, task):
+    """Store a secret (value from stdin or a hidden prompt) and print its reference."""
+    from core.secrets import SecretScope
+    from core.secrets.resolver import SECRET_SKILL_PREFIXES, configured_organization_id, open_default_store
+
+    if not skill.startswith(SECRET_SKILL_PREFIXES):
+        raise click.ClickException(f"secrets can only be bound to skills starting with {', '.join(SECRET_SKILL_PREFIXES)}")
+    value = click.get_text_stream("stdin").read() if not sys.stdin.isatty() else click.prompt("Secret value", hide_input=True)
+    value = value.rstrip("\r\n")
+    if not value:
+        raise click.ClickException("secret value must not be empty")
+    try:
+        store = open_default_store()
+    except (RuntimeError, ValueError) as exc:
+        raise click.ClickException(f"{exc}. Set GALAXZ_SECRETS_KEY to a Fernet key.")
+    organization = configured_organization_id()
+    reference = store.put(value, SecretScope(organization, repository, task, skill))
+    from core.security.audit import audit_event
+
+    audit_event(
+        "cli", "secret.put", "created",
+        secret_id=reference["secret_id"], skill=skill, repository=repository, task=task, organization_id=organization,
+    )
+    click.echo("Use this as the whole value of a string in a task payload:", err=True)
+    click.echo(f"${{{{ secrets.{reference['secret_id']} }}}}")

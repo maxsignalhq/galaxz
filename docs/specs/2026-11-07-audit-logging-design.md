@@ -55,8 +55,8 @@ added later if a deployment needs fail-closed.
 | HTTP middleware, any POST/PUT/PATCH/DELETE | `http.<method>` | principal id | `allowed` or `denied` | `path`, `status`, `principal_kind` |
 | HTTP middleware, any request answered 401/403 | `http.<method>` | `unauthenticated` | `denied` | `path`, `status` |
 | Policy gate | `policy.deny` / `policy.hold` | task origin | rule reason | `skill`, `rule_index` |
-| Secret resolution (**follow-up**, needs PR #23) | `secret.resolve` | task origin | `resolved` or the failure code | `skill`, `task_id`, `repository_id`, `count` |
-| `galaxz secret put` (**follow-up**, needs PR #23) | `secret.put` | `cli` | `created` | `secret_id`, `skill`, `repository`, `task`, `organization_id` |
+| Secret resolution | `secret.resolve` | task origin | `resolved` or the failure code | `skill`, `task_id`, `repository_id`, `count` |
+| `galaxz secret put` | `secret.put` | `cli` | `created` | `secret_id`, `skill`, `repository`, `task`, `organization_id` |
 
 Paths are recorded without the query string. A path can contain ids (goal, task) which is the point.
 
@@ -66,9 +66,7 @@ Paths are recorded without the query string. A path can contain ids (goal, task)
 (rejected). The audit middleware is outermost, so it also sees the 401s. This is the seam the
 accounts work replaces with real users.
 
-The two secret rows are specified here so the event vocabulary is complete, but secret references
-(`docs/specs/2026-11-07-secret-references-design.md`) are not on `main` at the time of this change; they
-are added in a follow-up PR once it merges. Values are never recorded, only references and counts.
+Secret events record references and counts only, never values. A resolution that finds no references records nothing.
 
 ### Reading
 `GET /audit/events?after=<sequence>&limit=<1..1000>` and `GET /audit/verify`; both require the API
