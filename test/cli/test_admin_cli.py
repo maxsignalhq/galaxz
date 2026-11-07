@@ -60,3 +60,16 @@ def test_admin_actions_are_audited_without_the_token():
     assert all(e["actor"] == "cli" for e in events)
     assert events[1]["extra"]["email"] == "a@x.io" and events[1]["extra"]["role"] == "admin"
     assert token not in str(events)
+
+
+def test_first_user_without_an_api_key_warns_about_prism(monkeypatch):
+    monkeypatch.delenv("GALAXZ_API_KEY", raising=False)
+    first = _run("user-create", "a@x.io", "--role", "admin")
+    assert first.exit_code == 0 and "GALAXZ_API_KEY" in first.output
+    second = _run("user-create", "b@x.io", "--role", "viewer")
+    assert "GALAXZ_API_KEY" not in second.output
+
+
+def test_no_warning_when_an_api_key_is_configured(monkeypatch):
+    monkeypatch.setenv("GALAXZ_API_KEY", "k")
+    assert "warning" not in _run("user-create", "a@x.io", "--role", "admin").output

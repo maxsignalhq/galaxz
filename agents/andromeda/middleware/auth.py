@@ -2,6 +2,7 @@ import hmac
 import logging
 import os
 
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -68,7 +69,7 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         token = header[len("Bearer "):] if header.startswith("Bearer ") else ""
         request.state.principal = {"id": "unauthenticated", "kind": "unauthenticated", "organization_id": "", "role": ""}
         try:
-            principal = self._resolve(token)
+            principal = await run_in_threadpool(self._resolve, token)  # blocking DB I/O stays off the event loop
         except Exception:
             logger.exception("[andromeda] account store unavailable; refusing request")
             return JSONResponse({"error": "authentication unavailable"}, status_code=503)

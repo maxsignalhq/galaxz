@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from uuid import uuid4
 
@@ -243,6 +244,12 @@ def _accounts():
 @click.option("--name", "display_name", default="", help="Display name")
 def admin_user_create(email, role, display_name):
     store, AccountError, audit_event = _accounts()
+    if not os.environ.get("GALAXZ_API_KEY") and not store.has_users():
+        click.echo(
+            "warning: this is the first user and GALAXZ_API_KEY is not set. Authentication becomes required now; "
+            "Prism (which sends GALAXZ_API_KEY) will get 401 until you set GALAXZ_API_KEY.",
+            err=True,
+        )
     try:
         user = store.create_user(email, role, display_name=display_name)
     except AccountError as exc:

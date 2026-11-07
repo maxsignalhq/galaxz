@@ -272,6 +272,8 @@ Galaxz is designed for local and trusted-network deployment. Authentication is o
   and `admin token-create alice@example.com`. Roles are `viewer`, `operator`, `reviewer` and `admin`;
   a route that is not explicitly assigned a permission requires `admin`. Once any user exists,
   authentication is required on every non-exempt route.
+  If you use Prism, set `GALAXZ_API_KEY` **before** creating the first user: Prism authenticates with that key,
+  and without it every Prism call returns 401 once a user exists.
 - Mutating and rejected requests are recorded in a tamper-evident audit log
   (`GET /audit/events`, `python -m cli.run audit verify`).
 

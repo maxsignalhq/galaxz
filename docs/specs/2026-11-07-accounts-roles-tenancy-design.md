@@ -69,7 +69,10 @@ exact permission names.
 - **Permissions:** `read`, `work:write`, `review:decide`, `audit:read`, `admin`; the full route table is in
   `core/accounts/permissions.py`. A test walks every route in the app and fails if one is not declared.
   FastAPI's built-in `/docs`, `/redoc` and `/openapi.json` are declared `admin`. `GET /orion/export`
-  (the full training dataset) is `admin`.
+  (the full training dataset) is `admin`. `POST /forge/agent|skill` is `admin` too: the scaffolder writes Python
+  source under `agents/`, which the platform imports, so it is code installation like `/catalog/{id}/install`.
+  Judgment-call rows to review: forge (admin), `/artifacts/rollback` (operator), `/orion/training/run`
+  (operator), `/orion/export` (admin), FastAPI docs routes (admin).
 - **`reviewed_by`:** the review-queue endpoints (`approve`/`accept`/`reject`) never recorded a reviewer, so
   attribution for them comes from the audit log (principal and task id in the path). The fine-tune and
   lesson approval endpoints now record the authenticated user (`user:<email>`) instead of the body field;
@@ -83,3 +86,6 @@ exact permission names.
 - Prism has no login: it authenticates with the deployment's `GALAXZ_API_KEY`, so all its users act as that
   key's administrator. The OIDC spec is what fixes this.
 - Rate limiting on failed token attempts.
+- The pre-existing exempt reads (`GET /review/queue`, `/tasks/recent`, `/status`, `/agents`) still return task
+  payloads and outputs without credentials. Out of scope here; worth closing in a follow-up.
+- The credential check runs on a worker thread (blocking database I/O stays off the event loop).

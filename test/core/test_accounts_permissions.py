@@ -21,6 +21,8 @@ from core.accounts.permissions import ROLES, allows, declared_permission, requir
         ("GET", "/config", "admin"),
         ("POST", "/repositories", "admin"),
         ("POST", "/catalog/some-agent/install", "admin"),
+        ("POST", "/forge/agent", "admin"),
+        ("POST", "/forge/skill", "admin"),
         ("GET", "/audit/events", "audit:read"),
         ("GET", "/audit/verify", "audit:read"),
         ("GET", "/orion/export", "admin"),

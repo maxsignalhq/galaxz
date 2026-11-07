@@ -42,7 +42,6 @@ _RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/artifacts/rollback", WORK_WRITE),
     ("POST", r"/lessons/propose", WORK_WRITE),
     ("POST", r"/orion/training/run", WORK_WRITE),
-    ("POST", r"/forge/(agent|skill)", WORK_WRITE),
     # audit
     ("GET", r"/audit/(events|verify)", AUDIT_READ),
     # administration
@@ -50,6 +49,7 @@ _RULES: tuple[tuple[str, str, str], ...] = (
     ("POST", r"/config", ADMIN),
     ("POST", r"/repositories", ADMIN),
     ("POST", rf"/catalog/{_SEG}/install", ADMIN),
+    ("POST", r"/forge/(agent|skill)", ADMIN),  # writes Python source under agents/, like a catalog install
     ("POST", r"/github/(pull-request|check-run)", ADMIN),
     ("GET", r"/github/installations(/.*)?", ADMIN),
     ("GET", r"/orion/export", ADMIN),  # the full training dataset
