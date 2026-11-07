@@ -61,9 +61,10 @@ def test_stale_base_and_conflicting_edits_are_rejected_before_merge(tmp_path):
             commit_artifacts(first.path, [{"filename": "README", "content": "stale\n"}], expected_base_sha="0" * 40, goal_id="goal-1")
         commit_artifacts(first.path, [{"filename": "README", "content": "first\n"}], expected_base_sha=base_sha, goal_id="goal-1")
         commit_artifacts(second.path, [{"filename": "README", "content": "second\n"}], expected_base_sha=base_sha, goal_id="goal-2")
-        _git(repository, "merge", "--no-edit", first.branch)
-        merge = subprocess.run(["git", "-C", str(repository), "merge", "--no-commit", second.branch], capture_output=True, text=True)
-        assert merge.returncode != 0
+        identity = ["-c", "user.name=Test", "-c", "user.email=test@example.com"]
+        _git(repository, *identity, "merge", "--no-edit", first.branch)
+        merge = subprocess.run(["git", "-C", str(repository), *identity, "merge", "--no-commit", second.branch], capture_output=True, text=True)
+        assert merge.returncode != 0 and "CONFLICT" in merge.stdout
         _git(repository, "merge", "--abort")
     finally:
         manager.cleanup(repository, first)
