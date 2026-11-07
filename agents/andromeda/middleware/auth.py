@@ -15,11 +15,6 @@ _EXEMPT_ROUTES = {
     ("GET", "/health"),
     ("GET", "/live"),
     ("GET", "/ready"),
-    ("GET", "/status"),
-    ("GET", "/agents"),
-    ("GET", "/tasks/recent"),
-    ("GET", "/tasks/stats"),
-    ("GET", "/review/queue"),
     ("GET", "/orion/status"),
     # GitHub authenticates this endpoint with X-Hub-Signature-256.
     ("POST", "/github/webhook"),

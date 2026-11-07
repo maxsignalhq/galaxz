@@ -44,6 +44,7 @@ class PostgresGoalStore:
             fallback_used=bool(row["fallback_used"]),
             resume_after=_timestamp(row["resume_after"]) if row["resume_after"] else None,
             pause_reason=row["pause_reason"], workspace_root=row["workspace_root"],
+            organization_id=row["organization_id"],
         )
 
     @staticmethod
@@ -61,8 +62,9 @@ class PostgresGoalStore:
     def create_goal(self, goal: GoalContract) -> None:
         with self.engine.begin() as c:
             c.execute(text("""INSERT INTO goals
-                (goal_id, origin, objective, confidence_threshold, status, plan_confidence, created_at, token_budget, workspace_root)
-                VALUES (:id, :origin, :objective, :threshold, :status, :confidence, :created, :budget, :root)"""), {
+                (goal_id, origin, objective, confidence_threshold, status, plan_confidence, created_at, token_budget, workspace_root, organization_id)
+                VALUES (:id, :origin, :objective, :threshold, :status, :confidence, :created, :budget, :root, :org)"""), {
+                "org": goal.organization_id,
                 "id": str(goal.goal_id), "origin": goal.origin, "objective": goal.objective,
                 "threshold": goal.confidence_threshold, "status": goal.status,
                 "confidence": goal.plan_confidence, "created": goal.created_at,
@@ -74,9 +76,15 @@ class PostgresGoalStore:
             row = c.execute(text("SELECT * FROM goals WHERE goal_id=:id"), {"id": str(goal_id)}).mappings().first()
         return self._goal(row) if row else None
 
-    def list_goals(self) -> list[GoalContract]:
+    def get_goal_for(self, goal_id: UUID, *, organization_id: str) -> GoalContract | None:
+        """The goal, or None when it does not exist *or* belongs to another organization."""
+        goal = self.get_goal(goal_id)
+        return goal if goal is not None and goal.organization_id == organization_id else None
+
+    def list_goals(self, *, organization_id: str | None) -> list[GoalContract]:
+        """Goals of one organization. ``None`` lists every organization and is for platform internals only."""
         with self.engine.connect() as c:
-            rows = c.execute(text("SELECT * FROM goals ORDER BY created_at DESC, goal_id DESC")).mappings().all()
+            rows = c.execute(text("SELECT * FROM goals WHERE (CAST(:org AS TEXT) IS NULL OR organization_id=:org) ORDER BY created_at DESC, goal_id DESC"), {"org": organization_id}).mappings().all()
         return [self._goal(row) for row in rows]
 
     def list_active_goals(self) -> list[GoalContract]:

@@ -1,6 +1,6 @@
 # Accounts, roles and multi-tenancy — design
 
-Date: 2026-11-07. Depends on: audit logging. Status: drafted at the maintainer's request; **phase A implemented** (phase B proposed, C not).
+Date: 2026-11-07. Depends on: audit logging. Status: drafted at the maintainer's request; **phase A implemented** (phase B1 implemented, B2/B3 and C not).
 
 ## Problem
 Auth is one shared `GALAXZ_API_KEY`. Everyone who has it is an administrator, and the identity
@@ -63,7 +63,7 @@ queue, repositories and memory have none.
 | Orion (fine-tune candidates, lessons, scorecards) | **B2**, separate PR | Orion is a separate service with its own stores; scope after the core path is proven |
 | Pulsar registry, LLM limiter, provider config | **global** | agents are platform resources shared by all tenants |
 | Audit log | **global**, `organization_id` recorded per event | one tamper-evident chain; `audit:read` stays admin-only; events gain an `organization_id` field so exports can be filtered |
-| Secrets | already scoped | `SecretScope.organization_id` is unchanged |
+| Secrets | already scoped | `SecretScope.organization_id` is unchanged; as of B1 the resolver uses the task's organization (a `default` task keeps using `GALAXZ_ORGANIZATION_ID`) |
 
 The organization is stamped from the authenticated principal when a row is created and never changes.
 `TaskContract` gains an optional `organization_id` (absent = `default`), set by Andromeda from the
@@ -108,6 +108,28 @@ Each PR keeps single-organization behaviour byte-for-byte. Tests: a two-organiza
 that walks every route taking an id and asserts organization B receives 404 for organization A's id; a
 no-default-argument check on the store methods; a Postgres test of the migration against a populated
 database.
+
+### B1 as built (differs from the proposal above)
+
+- **Migration `0007_organization_scope`** covers `goals` and `jobs` only. `tasks`, `review_queue`,
+  repositories, memory and policy grants get their column with the PR that scopes them (B2), because a
+  column nothing reads or filters on would look like isolation that is not there. SQLite stores add the
+  column on open, as before; the job store has a matching SQLite migration (v3).
+- **Required keyword, narrowed.** Tenant-facing lookups are the new `GoalStore.get_goal_for(id, *,
+  organization_id)` and `SqliteJobRepository.get_job_for(...)` (and the Postgres twins); `list_goals` and
+  `list_jobs` require `organization_id`. Mutators keyed by an id (`set_goal_status`, `cancel`, ...) stay
+  unscoped because the route has already authorised that id through `_own_goal` / `get_job_for`. Platform
+  internals use the explicitly named `list_jobs_all_organizations` and `list_goals(organization_id=None)`
+  / `list_active_goals`. A test fails if the service calls an unscoped lookup.
+- **Idempotency** is namespaced by prefixing the caller's key with the organization (`org:key`) for every
+  organization except `default`, instead of changing the table's primary key.
+- **`org-create` is deferred to B2.** Until the review queue, task log, repositories and memory are scoped,
+  a second organization would still see them, so B1 deliberately offers no way to create one from the CLI.
+- **Closed reads:** `/status`, `/agents`, `/tasks/recent`, `/tasks/stats` and `/review/queue` now require
+  `read`. They are not yet filtered by organization (B2), which is safe only because a second organization
+  cannot yet be created.
+- Still unscoped, by design for B1: `/route` and `/task` (tasks created outside goals and jobs carry the
+  default organization), the A2A gateway, and the review-resume path.
 
 ### Risks to review
 

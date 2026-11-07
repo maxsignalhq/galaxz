@@ -152,3 +152,20 @@ def test_pause_resume_cancel_and_rerun_are_durable_and_audited(tmp_path) -> None
     assert [event["action"] for event in store.events(goal.goal_id)] == [
         "resume", "pause", "resume", "rerun", "cancel"
     ]
+
+
+def test_goal_tasks_are_dispatched_in_the_goals_organization(tmp_path) -> None:
+    store, jobs, coordinator, _, _ = _setup(tmp_path)
+    goal = GoalContract(origin="test", objective="tenant goal", confidence_threshold=0.65, organization_id="org-a")
+    project = ProjectNode(goal_id=goal.goal_id, title="project")
+    task = PlannedTask(
+        project_id=project.project_id, goal_id=goal.goal_id,
+        skill="rigel.skill.code_generation", payload={"value": "x"},
+    )
+    store.create_goal(goal)
+    store.save_plan(goal.goal_id, [project], [task], 0.9, gated=False)
+    coordinator.start(goal.goal_id)
+    job = jobs.get_job_by_idempotency_key(coordinator.key(goal.goal_id, task.task_id))
+    assert job.organization_id == "org-a"
+    assert jobs.get_task(job.job_id).organization_id == "org-a"
+    assert jobs.get_job_for(job.job_id, organization_id="default") is None

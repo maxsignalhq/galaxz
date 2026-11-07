@@ -565,7 +565,23 @@ def _route_one(
     return _andromeda.route(task=task)
 
 
-def _task_contract(req: TaskRequest) -> TaskContract:
+def _organization(request: Request) -> str:
+    """The caller's organization, taken from the authenticated principal (never from the request body)."""
+    organization = (getattr(request.state, "principal", None) or {}).get("organization_id")
+    if not organization:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    return organization
+
+
+def _own_goal(request: Request, goal_id: UUID) -> GoalContract:
+    """The caller's goal. Another organization's goal is indistinguishable from a missing one (404)."""
+    goal = _andromeda.goal_store.get_goal_for(goal_id, organization_id=_organization(request))
+    if goal is None:
+        raise HTTPException(status_code=404, detail="goal not found")
+    return goal
+
+
+def _task_contract(req: TaskRequest, organization_id: str = "default") -> TaskContract:
     skill_id = _normalize_skill_id(req.skill_id)
     effective_task_text = _task_text_with_session_context(req.task, req.session_context)
     return TaskContract(
@@ -574,6 +590,7 @@ def _task_contract(req: TaskRequest) -> TaskContract:
         skill=skill_id,
         payload=_payload_for_skill(skill_id, effective_task_text),
         confidence_threshold=0.65,
+        organization_id=organization_id,
     )
 
 
@@ -728,14 +745,17 @@ def post_task(req: TaskRequest):
 
 
 @app.post("/jobs", status_code=202)
-def post_job(req: JobRequest):
+def post_job(req: JobRequest, request: Request):
     """Persist a task for execution by a dedicated durable worker."""
-    task = _task_contract(req)
+    organization = _organization(request)
+    task = _task_contract(req, organization)
+    # Idempotency keys are caller-supplied: namespace them so tenants cannot collide or probe each other.
+    key = req.idempotency_key if organization == "default" else f"{organization}:{req.idempotency_key}"
     try:
         job = _jobs().enqueue(
             task_id=task.task_id,
             task=task,
-            idempotency_key=req.idempotency_key,
+            idempotency_key=key,
             priority=req.priority,
             retry_policy=req.retry_policy,
         )
@@ -745,9 +765,9 @@ def post_job(req: JobRequest):
 
 
 @app.get("/jobs/{job_id}")
-def get_job(job_id: UUID):
+def get_job(job_id: UUID, request: Request):
     repository = _jobs()
-    job = repository.get_job(job_id)
+    job = repository.get_job_for(job_id, organization_id=_organization(request))
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
     return {
@@ -759,16 +779,18 @@ def get_job(job_id: UUID):
 
 
 @app.get("/jobs")
-def list_jobs(limit: int = 50):
+def list_jobs(request: Request, limit: int = 50):
     try:
-        jobs = _jobs().list_jobs(limit=limit)
+        jobs = _jobs().list_jobs(organization_id=_organization(request), limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return [job.model_dump(mode="json") for job in jobs]
 
 
 @app.post("/jobs/{job_id}/cancel")
-def cancel_job(job_id: UUID):
+def cancel_job(job_id: UUID, request: Request):
+    if _jobs().get_job_for(job_id, organization_id=_organization(request)) is None:
+        raise HTTPException(status_code=404, detail="job not found")
     try:
         job = _jobs().cancel(job_id=job_id)
     except KeyError as exc:
@@ -1020,7 +1042,7 @@ def _release_goal_task_after_review(item: dict, held: bool) -> None:
 
 
 @app.post("/goals", status_code=202)
-def create_goal(req: GoalRequest):
+def create_goal(req: GoalRequest, request: Request):
     if req.token_budget is not None and req.token_budget < 1:
         raise HTTPException(status_code=422, detail="token_budget must be >= 1")
     goal = GoalContract(
@@ -1028,6 +1050,7 @@ def create_goal(req: GoalRequest):
         objective=req.objective,
         confidence_threshold=req.confidence_threshold,
         token_budget=req.token_budget,
+        organization_id=_organization(request),
     )
     workspace = _read_workspace_path()
     if workspace:
@@ -1078,7 +1101,7 @@ def create_goal(req: GoalRequest):
 
 
 @app.get("/goals")
-def list_goals():
+def list_goals(request: Request):
     return [
         {
             "goal_id": str(g.goal_id),
@@ -1089,20 +1112,18 @@ def list_goals():
             "plan_confidence": g.plan_confidence,
             "created_at": g.created_at.isoformat(),
         }
-        for g in _andromeda.goal_store.list_goals()
+        for g in _andromeda.goal_store.list_goals(organization_id=_organization(request))
     ]
 
 
 @app.get("/goals/{goal_id}")
-def get_goal(goal_id: str):
+def get_goal(goal_id: str, request: Request):
     try:
         gid = UUID(goal_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="goal not found")
-    if _andromeda.goal_store.get_goal(gid) is None:
-        raise HTTPException(status_code=404, detail="goal not found")
+    goal = _own_goal(request, gid)
     tree = _andromeda.goal_store.goal_tree(gid)
-    goal = _andromeda.goal_store.get_goal(gid)
     tree["workspace_path"] = _workspace_display_path(goal.workspace_root or "") or None
     tree["rollup"] = _andromeda.goal_store.rollup(gid)
     tree["events"] = _andromeda.goal_store.events(gid)
@@ -1186,14 +1207,12 @@ async def github_webhook(request: Request):
 
 
 @app.post("/goals/{goal_id}/resume", status_code=202)
-def resume_goal(goal_id: str, req: GoalResumeRequest = GoalResumeRequest()):
+def resume_goal(goal_id: str, request: Request, req: GoalResumeRequest = GoalResumeRequest()):
     try:
         gid = UUID(goal_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="goal not found")
-    goal = _andromeda.goal_store.get_goal(gid)
-    if goal is None:
-        raise HTTPException(status_code=404, detail="goal not found")
+    goal = _own_goal(request, gid)
     if goal.status not in ("ready", "paused"):
         raise HTTPException(status_code=409, detail=f"goal is {goal.status}, cannot resume")
     if req.token_budget is not None:
@@ -1205,7 +1224,8 @@ def resume_goal(goal_id: str, req: GoalResumeRequest = GoalResumeRequest()):
 
 
 @app.post("/goals/{goal_id}/pause")
-def pause_goal(goal_id: UUID, req: GoalControlRequest = GoalControlRequest()):
+def pause_goal(goal_id: UUID, request: Request, req: GoalControlRequest = GoalControlRequest()):
+    _own_goal(request, goal_id)
     try:
         _goal_coordinator().pause(goal_id, actor="api", reason=req.reason)
     except KeyError as exc:
@@ -1216,7 +1236,8 @@ def pause_goal(goal_id: UUID, req: GoalControlRequest = GoalControlRequest()):
 
 
 @app.post("/goals/{goal_id}/cancel")
-def cancel_goal(goal_id: UUID, req: GoalControlRequest = GoalControlRequest()):
+def cancel_goal(goal_id: UUID, request: Request, req: GoalControlRequest = GoalControlRequest()):
+    _own_goal(request, goal_id)
     try:
         _goal_coordinator().cancel(goal_id, actor="api", reason=req.reason)
     except KeyError as exc:
@@ -1230,8 +1251,10 @@ def cancel_goal(goal_id: UUID, req: GoalControlRequest = GoalControlRequest()):
 def rerun_goal_task(
     goal_id: UUID,
     task_id: UUID,
+    request: Request,
     req: GoalControlRequest = GoalControlRequest(),
 ):
+    _own_goal(request, goal_id)
     try:
         _goal_coordinator().rerun(
             goal_id, task_id, actor="api", reason=req.reason

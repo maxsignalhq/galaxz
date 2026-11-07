@@ -18,7 +18,7 @@ def test_migration_upgrade_and_rollback(tmp_path) -> None:
     database = tmp_path / "jobs.db"
     repository = SqliteJobRepository(database)
 
-    assert repository.migration_version() == 2
+    assert repository.migration_version() == 3
     with sqlite3.connect(database) as connection:
         tables = {
             row[0]
@@ -323,3 +323,18 @@ def test_confidence_failure_is_terminal_and_distinct_from_execution_retry(tmp_pa
 def test_postgres_dsn_fails_instead_of_silently_using_sqlite() -> None:
     with pytest.raises(ValueError, match="PostgreSQL job storage is not implemented"):
         SqliteJobRepository("postgresql://db.example/galaxz")
+
+
+def test_jobs_are_scoped_to_their_organization(tmp_path) -> None:
+    repository = SqliteJobRepository(tmp_path / "jobs.db")
+    mine = TaskContract(origin="t", skill="s.k", payload={}, confidence_threshold=0.5, organization_id="org-a")
+    theirs = TaskContract(origin="t", skill="s.k", payload={}, confidence_threshold=0.5, organization_id="org-b")
+    a = repository.enqueue(task_id=mine.task_id, task=mine, idempotency_key="a")
+    b = repository.enqueue(task_id=theirs.task_id, task=theirs, idempotency_key="b")
+    assert (a.organization_id, b.organization_id) == ("org-a", "org-b")
+    assert repository.get_job_for(a.job_id, organization_id="org-a") == a
+    assert repository.get_job_for(a.job_id, organization_id="org-b") is None
+    assert [j.job_id for j in repository.list_jobs(organization_id="org-a")] == [a.job_id]
+    assert {j.job_id for j in repository.list_jobs_all_organizations()} == {a.job_id, b.job_id}
+    with pytest.raises(ValueError):
+        repository.enqueue(task_id=mine.task_id, task=mine, idempotency_key="x", organization_id="org-b")

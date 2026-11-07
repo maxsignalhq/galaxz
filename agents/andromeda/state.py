@@ -20,6 +20,7 @@ class AndromedaState(BaseModel):
     result: dict | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    organization_id: str | None = None
     confidence_breakdown: dict | None = None
     gaps: list[str] = Field(default_factory=list)
     status: str

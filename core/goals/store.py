@@ -94,6 +94,8 @@ class GoalStore:
         goal_columns = {row[1] for row in self._conn.execute("PRAGMA table_info(goals)")}
         if "workspace_root" not in goal_columns:
             self._conn.execute("ALTER TABLE goals ADD COLUMN workspace_root TEXT")
+        if "organization_id" not in goal_columns:
+            self._conn.execute("ALTER TABLE goals ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default'")
         for name, ddl in (
             ("token_budget", "INTEGER"),
             ("tokens_used", "INTEGER NOT NULL DEFAULT 0"),
@@ -120,12 +122,13 @@ class GoalStore:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO goals (goal_id, origin, objective, confidence_threshold, "
-                "status, plan_confidence, created_at, workspace_root, token_budget) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "status, plan_confidence, created_at, workspace_root, token_budget, organization_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     str(goal.goal_id), goal.origin, goal.objective,
                     goal.confidence_threshold, goal.status, goal.plan_confidence,
                     goal.created_at.isoformat(), goal.workspace_root, goal.token_budget,
+                    goal.organization_id,
                 ),
             )
             self._conn.commit()
@@ -149,13 +152,22 @@ class GoalStore:
             fallback_used=bool(row["fallback_used"]),
             resume_after=row["resume_after"],
             pause_reason=row["pause_reason"],
+            organization_id=row["organization_id"],
             created_at=row["created_at"],
         )
 
-    def list_goals(self) -> list[GoalContract]:
+    def get_goal_for(self, goal_id: UUID, *, organization_id: str) -> GoalContract | None:
+        """The goal, or None when it does not exist *or* belongs to another organization."""
+        goal = self.get_goal(goal_id)
+        return goal if goal is not None and goal.organization_id == organization_id else None
+
+    def list_goals(self, *, organization_id: str | None) -> list[GoalContract]:
+        """Goals of one organization. ``None`` lists every organization and is for platform internals only."""
         with self._lock:
             cur = self._conn.execute(
-                "SELECT goal_id FROM goals ORDER BY created_at DESC, rowid DESC"
+                "SELECT goal_id FROM goals WHERE (? IS NULL OR organization_id = ?) "
+                "ORDER BY created_at DESC, rowid DESC",
+                (organization_id, organization_id),
             )
             ids = [r["goal_id"] for r in cur.fetchall()]
             return [self.get_goal(UUID(i)) for i in ids]
@@ -163,7 +175,7 @@ class GoalStore:
     def list_active_goals(self) -> list[GoalContract]:
         return [
             goal
-            for goal in self.list_goals()
+            for goal in self.list_goals(organization_id=None)
             if goal.status in ("ready", "running", "paused")
         ]
 

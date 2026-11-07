@@ -153,3 +153,16 @@ def test_goal_payload_substitution_leaves_secret_references_untouched():
     reference = "${{ secrets.abc-123 }}"
     task = PlannedTask(project_id=uuid4(), goal_id=uuid4(), skill=SKILL, payload={"token": reference, "n": [reference]})
     assert resolve_payload(task, {}) == {"token": reference, "n": [reference]}
+
+
+def test_task_from_another_organization_cannot_resolve_default_secrets(store):
+    secret_id = _put(store, org="default")
+    resolver = SecretResolver(lambda: store, organization_id="default")
+    args = {"skill_id": SKILL, "repository_id": "repo-1", "task_id": "t"}
+    with pytest.raises(SecretResolutionError) as err:
+        resolver.resolve({"k": _ref(secret_id)}, organization_id="org-b", **args)
+    assert err.value.reason == "secret_reference_unavailable"
+    resolved, _ = resolver.resolve({"k": _ref(secret_id)}, organization_id="default", **args)
+    assert resolved == {"k": "tok-123"}
+    other = _put(store, org="org-b")
+    assert resolver.resolve({"k": _ref(other)}, organization_id="org-b", **args)[0] == {"k": "tok-123"}

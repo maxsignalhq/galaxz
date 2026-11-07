@@ -220,7 +220,7 @@ class DurableGoalCoordinator:
             )
             return
         running = sum(task.status == "running" for task in tasks)
-        global_running = sum(job.status is JobStatus.running for job in self.jobs.list_jobs(limit=500))
+        global_running = sum(job.status is JobStatus.running for job in self.jobs.list_jobs_all_organizations(limit=500))
         slots = min(self.per_goal_limit - running, self.global_limit - global_running)
         for task in tasks:
             if slots <= 0:
@@ -241,6 +241,7 @@ class DurableGoalCoordinator:
                 payload=payload,
                 confidence_threshold=goal.confidence_threshold,
                 workspace_root=goal.workspace_root,
+                organization_id=goal.organization_id,
             )
             job = self.jobs.enqueue(
                 task_id=contract.task_id,
@@ -324,6 +325,7 @@ class DurableGoalCoordinator:
             payload=payload,
             confidence_threshold=self.store.get_goal(goal_id).confidence_threshold,
             workspace_root=self.store.get_goal(goal_id).workspace_root,
+            organization_id=self.store.get_goal(goal_id).organization_id,
         )
         job = self.jobs.enqueue(
             task_id=task.task_id,

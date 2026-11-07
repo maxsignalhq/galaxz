@@ -70,7 +70,7 @@ def test_wormhole_calls_a_remote_galaxz_over_a2a(tmp_path):
     assert out["confidence"] == 1.0
     assert out["state"] == "TASK_STATE_COMPLETED"
     assert out["data"] == [{"result": {"echo": "hi"}, "summary": "hi", "gaps": []}]
-    stored = jobs.list_jobs()[0]
+    stored = jobs.list_jobs(organization_id="default")[0]
     assert jobs.get_task(stored.job_id).origin == "a2a:local-galaxz"
     assert jobs.get_task(stored.job_id).skill == "rigel.skill.echo"
 

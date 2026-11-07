@@ -23,6 +23,7 @@ class TaskContract(BaseModel):
     workspace_root: str | None = None  # set by Andromeda from WorkspaceConfig; None when workspace is disabled
     output_path: str | None = None     # caller-specified filename; threaded to context when workspace is enabled
     execution_attempt_id: UUID | None = None
+    organization_id: str = "default"  # tenant; set by Andromeda from the authenticated principal
     created_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("origin", "skill")
@@ -177,6 +178,7 @@ class GoalContract(BaseModel):
     fallback_used: bool = False  # platform-written: failover happened this attempt
     resume_after: datetime | None = None  # platform-written: provider_quota auto-resume time
     pause_reason: PauseReason | None = None  # platform-written
+    organization_id: str = "default"  # tenant; stamped at creation, never changes
     created_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("origin", "objective")

@@ -73,14 +73,21 @@ class SecretResolver:
                     raise SecretResolutionError("secret_store_unavailable") from exc
             return self._store
 
-    def resolve(self, payload: dict, *, skill_id: str, repository_id: str, task_id: str) -> tuple[dict, list[str]]:
-        """Return ``(payload_with_values, values)``; the input is never mutated."""
+    def resolve(
+        self, payload: dict, *, skill_id: str, repository_id: str, task_id: str, organization_id: str | None = None
+    ) -> tuple[dict, list[str]]:
+        """Return ``(payload_with_values, values)``; the input is never mutated.
+
+        A task from a non-default organization resolves only that organization's secrets. A ``default``
+        task keeps using the configured ``GALAXZ_ORGANIZATION_ID`` so existing single-tenant setups are unchanged.
+        """
+        organization_id = organization_id if organization_id not in (None, "default") else self.organization_id
         if not _has_reference(payload):
             return payload, []
         if not skill_id.startswith(SECRET_SKILL_PREFIXES):
             raise SecretResolutionError("secret_not_permitted_for_skill")
         store = self._open()
-        scope = SecretScope(self.organization_id, repository_id, task_id, skill_id)
+        scope = SecretScope(organization_id, repository_id, task_id, skill_id)
         values: list[str] = []
 
         def resolve_one(secret_id: str) -> str:
