@@ -10,7 +10,7 @@ DDL = """CREATE TABLE goals (
     confidence_threshold REAL NOT NULL, status TEXT NOT NULL, plan_confidence REAL,
     created_at TEXT NOT NULL, token_budget INTEGER,
     tokens_used INTEGER NOT NULL DEFAULT 0, fallback_used BOOLEAN NOT NULL DEFAULT 0,
-    resume_after TEXT, pause_reason TEXT)"""
+    resume_after TEXT, pause_reason TEXT, workspace_root TEXT)"""
 
 
 def _store(tmp_path):
@@ -38,3 +38,13 @@ def test_round_trip_and_methods(tmp_path):
     got = store.get_goal(goal.goal_id)
     assert got.pause_reason is None and got.fallback_used is False
     assert got.token_budget is None
+
+
+def test_workspace_root_round_trip(tmp_path):
+    store = _store(tmp_path)
+    with_root = GoalContract(origin="t", objective="x", confidence_threshold=0.65, workspace_root="/ws/a")
+    without = GoalContract(origin="t", objective="y", confidence_threshold=0.65)
+    store.create_goal(with_root)
+    store.create_goal(without)
+    assert store.get_goal(with_root.goal_id).workspace_root == "/ws/a"
+    assert store.get_goal(without.goal_id).workspace_root is None

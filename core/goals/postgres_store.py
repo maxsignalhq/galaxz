@@ -43,7 +43,7 @@ class PostgresGoalStore:
             token_budget=row["token_budget"], tokens_used=row["tokens_used"],
             fallback_used=bool(row["fallback_used"]),
             resume_after=_timestamp(row["resume_after"]) if row["resume_after"] else None,
-            pause_reason=row["pause_reason"],
+            pause_reason=row["pause_reason"], workspace_root=row["workspace_root"],
         )
 
     @staticmethod
@@ -61,12 +61,12 @@ class PostgresGoalStore:
     def create_goal(self, goal: GoalContract) -> None:
         with self.engine.begin() as c:
             c.execute(text("""INSERT INTO goals
-                (goal_id, origin, objective, confidence_threshold, status, plan_confidence, created_at, token_budget)
-                VALUES (:id, :origin, :objective, :threshold, :status, :confidence, :created, :budget)"""), {
+                (goal_id, origin, objective, confidence_threshold, status, plan_confidence, created_at, token_budget, workspace_root)
+                VALUES (:id, :origin, :objective, :threshold, :status, :confidence, :created, :budget, :root)"""), {
                 "id": str(goal.goal_id), "origin": goal.origin, "objective": goal.objective,
                 "threshold": goal.confidence_threshold, "status": goal.status,
                 "confidence": goal.plan_confidence, "created": goal.created_at,
-                "budget": goal.token_budget,
+                "budget": goal.token_budget, "root": goal.workspace_root,
             })
 
     def get_goal(self, goal_id: UUID) -> GoalContract | None:
