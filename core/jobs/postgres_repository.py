@@ -51,6 +51,7 @@ class PostgresJobRepository:
         return Job(
             job_id=UUID(row["job_id"]), task_id=UUID(row["task_id"]), status=JobStatus(row["status"]),
             priority=row["priority"], idempotency_key=row["idempotency_key"],
+            organization_id=row["organization_id"],
             retry_policy=RetryPolicy(max_attempts=row["max_attempts"], backoff_seconds=row["backoff_seconds"],
                 max_backoff_seconds=row["max_backoff_seconds"],
                 retryable_outcomes=tuple(json.loads(row["retryable_outcomes_json"]))),
@@ -70,19 +71,25 @@ class PostgresJobRepository:
         )
 
     def enqueue(self, *, task_id: UUID, task: TaskContract | None = None, idempotency_key: str,
-                priority: int = 0, retry_policy: RetryPolicy | None = None, now: datetime | None = None) -> Job:
+                priority: int = 0, retry_policy: RetryPolicy | None = None, now: datetime | None = None,
+                organization_id: str | None = None) -> Job:
         if task is not None and task.task_id != task_id:
             raise ValueError("task_id must match task.task_id")
+        if organization_id is None:
+            organization_id = task.organization_id if task is not None else "default"
+        elif task is not None and task.organization_id != organization_id:
+            raise ValueError("organization_id must match task.organization_id")
         now = now or _now(); policy = retry_policy or RetryPolicy(); candidate = Job(
-            task_id=task_id, idempotency_key=idempotency_key, priority=priority, retry_policy=policy,
+            task_id=task_id, organization_id=organization_id, idempotency_key=idempotency_key, priority=priority, retry_policy=policy,
             created_at=now, updated_at=now, available_at=now)
         with self.engine.begin() as c:
             existing = c.execute(text("""SELECT j.*, i.idempotency_key FROM jobs j JOIN job_idempotency i USING(job_id)
                 WHERE i.idempotency_key=:key"""), {"key": idempotency_key}).mappings().first()
             if existing: return self._job(existing)
             c.execute(text("""INSERT INTO jobs(job_id,task_id,status,priority,max_attempts,backoff_seconds,max_backoff_seconds,
-                retryable_outcomes_json,created_at,updated_at,available_at) VALUES
-                (:id,:task,:status,:priority,:max,:backoff,:maxbackoff,:outcomes,:created,:updated,:available)"""), {
+                retryable_outcomes_json,created_at,updated_at,available_at,organization_id) VALUES
+                (:id,:task,:status,:priority,:max,:backoff,:maxbackoff,:outcomes,:created,:updated,:available,:org)"""), {
+                "org": organization_id,
                 "id": str(candidate.job_id), "task": str(task_id), "status": candidate.status.value, "priority": priority,
                 "max": policy.max_attempts, "backoff": policy.backoff_seconds, "maxbackoff": policy.max_backoff_seconds,
                 "outcomes": json.dumps(sorted(policy.retryable_outcomes)), "created": now, "updated": now, "available": now})
@@ -108,14 +115,26 @@ class PostgresJobRepository:
             row = c.execute(text("SELECT j.*, i.idempotency_key FROM jobs j JOIN job_idempotency i USING(job_id) WHERE j.job_id=:id"), {"id": str(job_id)}).mappings().first()
         return self._job(row) if row else None
 
+    def get_job_for(self, job_id: UUID, *, organization_id: str) -> Job | None:
+        """The job, or None when it does not exist *or* belongs to another organization."""
+        job = self.get_job(job_id)
+        return job if job is not None and job.organization_id == organization_id else None
+
     def get_job_by_idempotency_key(self, key: str) -> Job | None:
         with self.engine.connect() as c:
             row = c.execute(text("SELECT j.*, i.idempotency_key FROM jobs j JOIN job_idempotency i USING(job_id) WHERE i.idempotency_key=:key"), {"key": key}).mappings().first()
         return self._job(row) if row else None
 
-    def list_jobs(self, *, limit: int = 50) -> list[Job]:
+    def list_jobs(self, *, organization_id: str, limit: int = 50) -> list[Job]:
+        return self._list_jobs(organization_id, limit)
+
+    def list_jobs_all_organizations(self, *, limit: int = 50) -> list[Job]:
+        """System-wide listing for platform internals (concurrency accounting); never for API callers."""
+        return self._list_jobs(None, limit)
+
+    def _list_jobs(self, organization_id: str | None, limit: int) -> list[Job]:
         with self.engine.connect() as c:
-            rows = c.execute(text("SELECT j.*, i.idempotency_key FROM jobs j JOIN job_idempotency i USING(job_id) ORDER BY created_at DESC, job_id DESC LIMIT :limit"), {"limit": limit}).mappings().all()
+            rows = c.execute(text("SELECT j.*, i.idempotency_key FROM jobs j JOIN job_idempotency i USING(job_id) WHERE (CAST(:org AS TEXT) IS NULL OR j.organization_id=:org) ORDER BY created_at DESC, job_id DESC LIMIT :limit"), {"org": organization_id, "limit": limit}).mappings().all()
         return [self._job(row) for row in rows]
 
     def claim(self, *, worker_id: str, lease_seconds: float, now: datetime | None = None):

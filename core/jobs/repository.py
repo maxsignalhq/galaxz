@@ -96,13 +96,19 @@ class SqliteJobRepository:
         priority: int = 0,
         retry_policy: RetryPolicy | None = None,
         now: datetime | None = None,
+        organization_id: str | None = None,
     ) -> Job:
         retry_policy = retry_policy or RetryPolicy()
         if task is not None and task.task_id != task_id:
             raise ValueError("task_id must match task.task_id")
+        if organization_id is None:
+            organization_id = task.organization_id if task is not None else "default"
+        elif task is not None and task.organization_id != organization_id:
+            raise ValueError("organization_id must match task.organization_id")
         now = now or _utc_now()
         candidate = Job(
             task_id=task_id,
+            organization_id=organization_id,
             idempotency_key=idempotency_key,
             priority=priority,
             retry_policy=retry_policy,
@@ -131,8 +137,8 @@ class SqliteJobRepository:
                 INSERT INTO jobs(
                     job_id, task_id, status, priority, max_attempts,
                     backoff_seconds, max_backoff_seconds, retryable_outcomes_json,
-                    created_at, updated_at, available_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_at, updated_at, available_at, organization_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(candidate.job_id),
@@ -146,6 +152,7 @@ class SqliteJobRepository:
                     _serialize(now),
                     _serialize(now),
                     _serialize(now),
+                    candidate.organization_id,
                 ),
             )
             connection.execute(
@@ -201,6 +208,11 @@ class SqliteJobRepository:
         finally:
             connection.close()
 
+    def get_job_for(self, job_id: UUID, *, organization_id: str) -> Job | None:
+        """The job, or None when it does not exist *or* belongs to another organization."""
+        job = self.get_job(job_id)
+        return job if job is not None and job.organization_id == organization_id else None
+
     def get_job_by_idempotency_key(self, idempotency_key: str) -> Job | None:
         connection = self._connect()
         try:
@@ -216,7 +228,14 @@ class SqliteJobRepository:
         finally:
             connection.close()
 
-    def list_jobs(self, *, limit: int = 50) -> list[Job]:
+    def list_jobs(self, *, organization_id: str, limit: int = 50) -> list[Job]:
+        return self._list_jobs(organization_id, limit)
+
+    def list_jobs_all_organizations(self, *, limit: int = 50) -> list[Job]:
+        """System-wide listing for platform internals (concurrency accounting); never for API callers."""
+        return self._list_jobs(None, limit)
+
+    def _list_jobs(self, organization_id: str | None, limit: int) -> list[Job]:
         if not 1 <= limit <= 500:
             raise ValueError("limit must be between 1 and 500")
         connection = self._connect()
@@ -225,9 +244,10 @@ class SqliteJobRepository:
                 """
                 SELECT jobs.*, job_idempotency.idempotency_key
                 FROM jobs JOIN job_idempotency USING(job_id)
+                WHERE (? IS NULL OR jobs.organization_id = ?)
                 ORDER BY created_at DESC, job_id DESC LIMIT ?
                 """,
-                (limit,),
+                (organization_id, organization_id, limit),
             ).fetchall()
             return [self._job_from_row(row) for row in rows]
         finally:
@@ -793,6 +813,7 @@ class SqliteJobRepository:
             status=JobStatus(row["status"]),
             priority=row["priority"],
             idempotency_key=key,
+            organization_id=row["organization_id"],
             retry_policy=RetryPolicy(
                 max_attempts=row["max_attempts"],
                 backoff_seconds=row["backoff_seconds"],

@@ -218,3 +218,31 @@ def test_account_store_works_against_the_migrated_postgres_schema(database):
     assert store.authenticate(token) is None
     store.deactivate_user("a@x.io")
     assert store.has_users() is True
+
+
+def test_postgres_goals_and_jobs_are_scoped_by_organization(database):
+    from core.contracts import GoalContract
+    from core.goals.postgres_store import PostgresGoalStore
+
+    migrate(database)
+    url = database.url.render_as_string(hide_password=False)
+    goals = PostgresGoalStore(url, engine=database)
+    a = GoalContract(origin="t", objective="a", confidence_threshold=0.5, organization_id="org-a")
+    b = GoalContract(origin="t", objective="b", confidence_threshold=0.5)
+    goals.create_goal(a)
+    goals.create_goal(b)
+    assert goals.get_goal_for(a.goal_id, organization_id="org-a").organization_id == "org-a"
+    assert goals.get_goal_for(a.goal_id, organization_id="default") is None
+    assert [g.goal_id for g in goals.list_goals(organization_id="default")] == [b.goal_id]
+    assert len(goals.list_goals(organization_id=None)) == 2
+
+    jobs = PostgresJobRepository(url, engine=database)
+    task = TaskContract(origin="t", skill="s.k", payload={}, confidence_threshold=0.5, organization_id="org-a")
+    job = jobs.enqueue(task_id=task.task_id, task=task, idempotency_key="scoped")
+    assert job.organization_id == "org-a"
+    assert jobs.get_job_for(job.job_id, organization_id="org-a") == job
+    assert jobs.get_job_for(job.job_id, organization_id="default") is None
+    assert [j.job_id for j in jobs.list_jobs(organization_id="org-a")] == [job.job_id]
+    assert jobs.list_jobs(organization_id="default") == []
+    assert [j.job_id for j in jobs.list_jobs_all_organizations()] == [job.job_id]
+    jobs.close()

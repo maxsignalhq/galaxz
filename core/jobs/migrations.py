@@ -112,9 +112,20 @@ def _downgrade_v2(connection: sqlite3.Connection) -> None:
     connection.execute("DROP TABLE completion_outbox")
 
 
+def _upgrade_v3(connection: sqlite3.Connection) -> None:
+    connection.execute("ALTER TABLE jobs ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default'")
+    connection.execute("CREATE INDEX jobs_organization ON jobs(organization_id)")
+
+
+def _downgrade_v3(connection: sqlite3.Connection) -> None:
+    connection.execute("DROP INDEX jobs_organization")
+    connection.execute("ALTER TABLE jobs DROP COLUMN organization_id")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (_upgrade_v1, _downgrade_v1),
     (_upgrade_v2, _downgrade_v2),
+    (_upgrade_v3, _downgrade_v3),
 )
 
 

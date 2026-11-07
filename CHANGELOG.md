@@ -29,6 +29,12 @@ the working tree. It is intended to be reviewed before the next GitHub push.
   (undeclared routes require `admin`); `GET /auth/me`; `galaxz admin ...` management commands;
   fine-tune and lesson approvals are attributed to the authenticated user. Migration
   `0006_accounts`. `GALAXZ_API_KEY` keeps working as an administrator.
+- Tenant scoping (accounts phase B1): goals and jobs carry an `organization_id` (migration
+  `0007_organization_scope`; existing rows land in `default`), taken from the authenticated principal.
+  Another organization's goal or job is reported as 404. Job idempotency keys are namespaced per
+  organization. **Behaviour change:** `GET /status`, `/agents`, `/tasks/recent`, `/tasks/stats` and
+  `/review/queue` no longer answer unauthenticated requests; they need the `read` permission (health,
+  liveness and readiness stay open). Organizations cannot be created yet (phase B2).
 - Secret references: `${{ secrets.<id> }}` in a `quasar.*` tool payload is resolved
   only while the tool runs (scoped to organization, repository and skill) and
   redacted from results and errors, so plaintext never reaches the goal, job,

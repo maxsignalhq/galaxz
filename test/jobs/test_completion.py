@@ -3,7 +3,7 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 import sqlite3
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -194,19 +194,28 @@ def test_durable_routing_defers_artifacts_and_reviews(tmp_path):
     assert len(reviews.get_pending()) == 1
 
 
-def test_populated_v1_upgrade_preserves_job_and_adds_completion_outbox(tmp_path):
+def test_populated_upgrade_preserves_job_and_backfills_default_organization(tmp_path):
     from core.jobs.migrations import upgrade
 
     database = tmp_path / "jobs.db"
     with sqlite3.connect(database) as connection:
-        upgrade(connection, target=1)
-    old = SqliteJobRepository(database, migrate=False)
+        upgrade(connection, target=2)
     task = TaskContract(origin="test", skill="fake.skill.echo", payload={},
                         confidence_threshold=0.8)
-    job = old.enqueue(task_id=task.task_id, task=task, idempotency_key="upgrade")
+    job_id = str(uuid4())
+    now = "2026-01-01T00:00:00+00:00"
+    with sqlite3.connect(database) as connection:  # a row written by the previous release
+        connection.execute(
+            "INSERT INTO jobs(job_id, task_id, status, priority, max_attempts, backoff_seconds, max_backoff_seconds, "
+            "retryable_outcomes_json, created_at, updated_at, available_at) VALUES (?, ?, 'queued', 0, 3, 1, 60, '[]', ?, ?, ?)",
+            (job_id, str(task.task_id), now, now, now),
+        )
+        connection.execute("INSERT INTO job_idempotency VALUES ('upgrade', ?, ?)", (job_id, now))
+        connection.execute("INSERT INTO job_tasks VALUES (?, ?)", (job_id, task.model_dump_json()))
     current = SqliteJobRepository(database)
-    assert current.migration_version() == 2
-    assert current.get_job(job.job_id) == job
+    assert current.migration_version() == 3
+    job = current.get_job(UUID(job_id))
+    assert job is not None and job.organization_id == "default"
     assert current.get_task(job.job_id) == task
     _, attempt = current.claim(worker_id="worker", lease_seconds=30)
     current.complete(job_id=job.job_id, lease_token=attempt.lease_token,

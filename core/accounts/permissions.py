@@ -57,6 +57,7 @@ _RULES: tuple[tuple[str, str, str], ...] = (
     # read-only views
     ("GET", r"/auth/me", READ),
     ("GET", r"/artifacts(/(diff|history))?", READ),
+    ("GET", r"/agents", READ),
     ("GET", r"/catalog", READ),
     ("GET", r"/finetune/candidates", READ),
     ("GET", r"/goals(/.*)?", READ),
@@ -68,6 +69,7 @@ _RULES: tuple[tuple[str, str, str], ...] = (
     ("GET", rf"/repositories/{_SEG}", READ),
     ("GET", r"/review/queue(/.*)?", READ),
     ("GET", r"/scorecards(/.*)?", READ),
+    ("GET", r"/status", READ),
     ("GET", r"/tasks/(recent|stats|throughput)", READ),
     ("GET", r"/wormhole", READ),
 )

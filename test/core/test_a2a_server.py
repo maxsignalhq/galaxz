@@ -213,7 +213,7 @@ def test_send_message_bad_threshold(env, threshold):
 def test_caller_skill_allow_list_yields_rejected_task(env):
     task = send(env, token="tok-b", skill="partner.skill", message_id="r1")
     assert task["status"]["state"] == "TASK_STATE_REJECTED"
-    assert env.jobs.list_jobs() == []  # nothing was enqueued
+    assert env.jobs.list_jobs(organization_id="default") == []  # nothing was enqueued
     assert error_code(rpc(env, "GetTask", {"id": task["id"]}, token="tok-b")) == -32050
 
 

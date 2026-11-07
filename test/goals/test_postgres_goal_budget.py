@@ -10,7 +10,8 @@ DDL = """CREATE TABLE goals (
     confidence_threshold REAL NOT NULL, status TEXT NOT NULL, plan_confidence REAL,
     created_at TEXT NOT NULL, token_budget INTEGER,
     tokens_used INTEGER NOT NULL DEFAULT 0, fallback_used BOOLEAN NOT NULL DEFAULT 0,
-    resume_after TEXT, pause_reason TEXT, workspace_root TEXT)"""
+    resume_after TEXT, pause_reason TEXT, workspace_root TEXT,
+    organization_id TEXT NOT NULL DEFAULT 'default')"""
 
 
 def _store(tmp_path):

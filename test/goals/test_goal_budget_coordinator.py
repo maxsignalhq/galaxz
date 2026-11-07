@@ -189,7 +189,7 @@ def test_restart_after_failover_dispatches_exactly_once(tmp_path):
     )
     restarted.reconcile_all()
     keys = [
-        j.idempotency_key for j in jobs.list_jobs(limit=50)
+        j.idempotency_key for j in jobs.list_jobs(organization_id="default", limit=50)
         if j.idempotency_key.startswith(co.key(goal.goal_id, a.task_id))
     ]
     assert sorted(keys) == [
