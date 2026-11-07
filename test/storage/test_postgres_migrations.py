@@ -92,10 +92,9 @@ def test_populated_baseline_upgrade_preserves_evidence(database):
         require_current_schema(connection)
         for table, rows in before.items():
             after = connection.exec_driver_sql(f'SELECT * FROM "{table}"').fetchall()
-            if table == "artifact_versions":
-                assert [tuple(row[:len(rows[0])]) for row in after] == rows
-            else:
-                assert after == rows
+            # Later migrations may append columns; the original columns must be preserved.
+            width = len(rows[0]) if rows else 0
+            assert [tuple(row[:width]) for row in after] == rows
         assert connection.exec_driver_sql("SELECT * FROM artifact_attempt_versions").fetchall() == [
             ("attempt::::a.py", "::a.py", 1)]
         assert connection.exec_driver_sql("SELECT * FROM completion_outbox").fetchall() == []
