@@ -20,6 +20,7 @@ _DEFAULT_DATABASES = {
     "JOB_DB_PATH": "jobs.db",
     "POLICY_DB_PATH": "policy.db",
     "GALAXZ_AUDIT_DB": "audit.db",
+    "GALAXZ_ACCOUNTS_DB": "accounts.db",
 }
 
 

@@ -1,6 +1,6 @@
 # Accounts, roles and multi-tenancy — design
 
-Date: 2026-11-07. Depends on: audit logging. Status: specified, not implemented.
+Date: 2026-11-07. Depends on: audit logging. Status: drafted at the maintainer's request; **phase A implemented** (phases B and C are not).
 
 ## Problem
 Auth is one shared `GALAXZ_API_KEY`. Everyone who has it is an administrator, and the identity
@@ -55,3 +55,31 @@ and least privilege). B. organization scoping of stored data. C. quotas.
 ## Left to the builder
 Token format prefix, password-less admin bootstrap command (`galaxz admin create-token`), and the
 exact permission names.
+
+## Phase A as built (what differs from or adds to the text above)
+- **Token format:** `gzt_` + 43 URL-safe characters; stored as SHA-256 only, with the 8-character prefix
+  kept for identification. A token's role may equal the user's role or be `viewer`; an `admin` user may
+  issue a token of any role. Tokens may expire (`--ttl-days`) and be revoked.
+- **Management is CLI-only** (`galaxz admin user-create | user-list | user-deactivate | token-create |
+  token-revoke`), so there is no unauthenticated or self-service path to create an administrator. Each
+  action is written to the audit log (never the token).
+- **Authentication:** `GET /auth/me` returns the caller's principal. Auth becomes mandatory as soon as one
+  user exists, even when `GALAXZ_API_KEY` is unset. If the account store cannot be read the request is
+  refused with 503; it never falls back to open access.
+- **Permissions:** `read`, `work:write`, `review:decide`, `audit:read`, `admin`; the full route table is in
+  `core/accounts/permissions.py`. A test walks every route in the app and fails if one is not declared.
+  FastAPI's built-in `/docs`, `/redoc` and `/openapi.json` are declared `admin`. `GET /orion/export`
+  (the full training dataset) is `admin`.
+- **`reviewed_by`:** the review-queue endpoints (`approve`/`accept`/`reject`) never recorded a reviewer, so
+  attribution for them comes from the audit log (principal and task id in the path). The fine-tune and
+  lesson approval endpoints now record the authenticated user (`user:<email>`) instead of the body field;
+  the body field is still honored for the legacy API key.
+- **Storage:** Alembic `0006_accounts` (seeds the `default` organization). Local mode uses SQLite
+  (`GALAXZ_ACCOUNTS_DB`); a PostgreSQL `GALAXZ_DATABASE_URL` is used when set. Verified against a real
+  PostgreSQL 16.
+
+## Not yet done
+- Phase B (organization scoping of goals, repositories, jobs, memory, artifacts) and C (quotas).
+- Prism has no login: it authenticates with the deployment's `GALAXZ_API_KEY`, so all its users act as that
+  key's administrator. The OIDC spec is what fixes this.
+- Rate limiting on failed token attempts.

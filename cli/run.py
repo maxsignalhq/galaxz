@@ -223,3 +223,77 @@ def secret_put(skill, repository, task):
     )
     click.echo("Use this as the whole value of a string in a task payload:", err=True)
     click.echo(f"${{{{ secrets.{reference['secret_id']} }}}}")
+
+
+@galaxz.group()
+def admin():
+    """Manage users and API tokens (run on the host or inside the galaxz container)."""
+
+
+def _accounts():
+    from core.accounts import AccountError, get_account_store
+    from core.security.audit import audit_event
+
+    return get_account_store(), AccountError, audit_event
+
+
+@admin.command("user-create")
+@click.argument("email")
+@click.option("--role", required=True, help="viewer, operator, reviewer or admin")
+@click.option("--name", "display_name", default="", help="Display name")
+def admin_user_create(email, role, display_name):
+    store, AccountError, audit_event = _accounts()
+    try:
+        user = store.create_user(email, role, display_name=display_name)
+    except AccountError as exc:
+        raise click.ClickException(str(exc))
+    audit_event("cli", "admin.user.create", "created", email=user.email, role=user.role, organization_id=user.organization_id)
+    click.echo(f"created {user.email} ({user.role}) in organization {user.organization_id}")
+
+
+@admin.command("user-list")
+def admin_user_list():
+    store, _, _ = _accounts()
+    for user in store.list_users():
+        click.echo(f"{user.email}\t{user.role}\t{'active' if user.active else 'inactive'}\t{user.organization_id}")
+
+
+@admin.command("user-deactivate")
+@click.argument("email")
+def admin_user_deactivate(email):
+    store, AccountError, audit_event = _accounts()
+    try:
+        store.deactivate_user(email)
+    except AccountError as exc:
+        raise click.ClickException(str(exc))
+    audit_event("cli", "admin.user.deactivate", "deactivated", email=email.strip().lower())
+    click.echo(f"deactivated {email.strip().lower()}; their tokens no longer work")
+
+
+@admin.command("token-create")
+@click.argument("email")
+@click.option("--role", default=None, help="Defaults to the user's role; may only be lowered")
+@click.option("--ttl-days", type=click.IntRange(min=1), default=None, help="Expire after this many days")
+def admin_token_create(email, role, ttl_days):
+    """Create an API token. It is printed once and cannot be recovered."""
+    store, AccountError, audit_event = _accounts()
+    try:
+        token, record = store.create_token(email, role=role, ttl_days=ttl_days)
+    except AccountError as exc:
+        raise click.ClickException(str(exc))
+    audit_event("cli", "admin.token.create", "created", email=email.strip().lower(), role=record["role"],
+                token_id=record["id"], prefix=record["prefix"], expires_at=record["expires_at"])
+    click.echo(f"token id {record['id']}; shown once, store it now:", err=True)
+    click.echo(token)
+
+
+@admin.command("token-revoke")
+@click.argument("token_id")
+def admin_token_revoke(token_id):
+    store, AccountError, audit_event = _accounts()
+    try:
+        store.revoke_token(token_id)
+    except AccountError as exc:
+        raise click.ClickException(str(exc))
+    audit_event("cli", "admin.token.revoke", "revoked", token_id=token_id)
+    click.echo(f"revoked {token_id}")

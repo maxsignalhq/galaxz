@@ -172,6 +172,17 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(ApiKeyMiddleware)
 app.add_middleware(AuditMiddleware)  # added last = outermost, so it sees the 401s
 
+def _reviewer(request: Request, claimed: str) -> str:
+    """Attribute a human decision to the authenticated user; the body field is only trusted for the legacy key."""
+    principal = getattr(request.state, "principal", None) or {}
+    return principal["id"] if principal.get("kind") == "user" else claimed
+
+
+@app.get("/auth/me")
+def auth_me(request: Request):
+    return request.state.principal
+
+
 @app.get("/audit/events")
 def audit_events(after: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=1000)):
     return {"events": default_audit_log().export(after=after, limit=limit)}
@@ -1497,28 +1508,28 @@ def get_finetune_candidates():
 
 
 @app.post("/finetune/candidates/{candidate_id}/approve")
-def approve_finetune_candidate(candidate_id: str, req: CandidateReviewRequest):
+def approve_finetune_candidate(candidate_id: str, req: CandidateReviewRequest, request: Request):
     candidate = _candidate_client.get_candidate(candidate_id)
     if candidate is None:
         raise HTTPException(status_code=404, detail="candidate not found")
     if candidate.status != "pending":
         raise HTTPException(status_code=409, detail="candidate already reviewed")
     try:
-        _candidate_client.approve(candidate_id, req.reviewed_by, req.reviewer_note)
+        _candidate_client.approve(candidate_id, _reviewer(request, req.reviewed_by), req.reviewer_note)
     except CandidateNotFoundError:
         raise HTTPException(status_code=404, detail="candidate not found")
     return {"status": "approved", "candidate_id": candidate_id}
 
 
 @app.post("/finetune/candidates/{candidate_id}/reject")
-def reject_finetune_candidate(candidate_id: str, req: CandidateReviewRequest):
+def reject_finetune_candidate(candidate_id: str, req: CandidateReviewRequest, request: Request):
     candidate = _candidate_client.get_candidate(candidate_id)
     if candidate is None:
         raise HTTPException(status_code=404, detail="candidate not found")
     if candidate.status != "pending":
         raise HTTPException(status_code=409, detail="candidate already reviewed")
     try:
-        _candidate_client.reject(candidate_id, req.reviewed_by, req.reviewer_note)
+        _candidate_client.reject(candidate_id, _reviewer(request, req.reviewed_by), req.reviewer_note)
     except CandidateNotFoundError:
         raise HTTPException(status_code=404, detail="candidate not found")
     return {"status": "rejected", "candidate_id": candidate_id}
@@ -1565,7 +1576,7 @@ def list_skill_lessons(status: str = Query("pending", pattern="^(pending|approve
 
 
 @app.post("/lessons/{candidate_id}/approve")
-def approve_skill_lesson(candidate_id: str, req: LessonReviewRequest):
+def approve_skill_lesson(candidate_id: str, req: LessonReviewRequest, request: Request):
     store = _lesson_store()
     candidate = store.get(candidate_id)
     if candidate is None:
@@ -1575,7 +1586,7 @@ def approve_skill_lesson(candidate_id: str, req: LessonReviewRequest):
         edited = normalize_lesson(req.content)
         if not edited or len(edited) > MAX_LESSON_CHARS:
             raise HTTPException(status_code=422, detail=f"content must be 1-{MAX_LESSON_CHARS} characters")
-    if not store.claim(candidate_id, "approved", req.reviewed_by, req.reviewer_note, edited):
+    if not store.claim(candidate_id, "approved", _reviewer(request, req.reviewed_by), req.reviewer_note, edited):
         raise HTTPException(status_code=409, detail="lesson already reviewed")
     try:
         entry = _andromeda.nebula.remember(
@@ -1591,11 +1602,11 @@ def approve_skill_lesson(candidate_id: str, req: LessonReviewRequest):
 
 
 @app.post("/lessons/{candidate_id}/reject")
-def reject_skill_lesson(candidate_id: str, req: LessonReviewRequest):
+def reject_skill_lesson(candidate_id: str, req: LessonReviewRequest, request: Request):
     store = _lesson_store()
     if store.get(candidate_id) is None:
         raise HTTPException(status_code=404, detail="lesson not found")
-    if not store.claim(candidate_id, "rejected", req.reviewed_by, req.reviewer_note):
+    if not store.claim(candidate_id, "rejected", _reviewer(request, req.reviewed_by), req.reviewer_note):
         raise HTTPException(status_code=409, detail="lesson already reviewed")
     return {"status": "rejected", "candidate_id": candidate_id}
 

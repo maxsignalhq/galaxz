@@ -1079,6 +1079,22 @@
         "summary": "Audit Verify"
       }
     },
+    "/auth/me": {
+      "get": {
+        "operationId": "auth_me_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Auth Me"
+      }
+    },
     "/catalog": {
       "get": {
         "operationId": "list_catalog_catalog_get",
