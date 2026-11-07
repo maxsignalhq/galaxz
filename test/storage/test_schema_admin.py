@@ -12,7 +12,7 @@ from core.storage.manage import validate_runtime_database_configuration
 
 
 def test_revision_graph_has_one_expected_head():
-    assert expected_revision() == "0005_goal_workspace_root"
+    assert expected_revision() == "0006_accounts"
 
 
 def test_schema_command_requires_explicit_database(monkeypatch):

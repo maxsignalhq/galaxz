@@ -264,12 +264,23 @@ agents.
 
 ## Security
 
-Galaxz v1 is designed for local and trusted-network deployment.
-No authentication or multi-tenancy is implemented by default.
+Galaxz is designed for local and trusted-network deployment. Authentication is opt-in:
 
-See [docs/decisions/auth-boundary.md](docs/decisions/auth-boundary.md)
-for the full v1 auth boundary decision, trust boundary table, and v2
-roadmap.
+- **No key and no users:** the API is open (local development).
+- **`GALAXZ_API_KEY` set:** that key is an administrator in the `default` organization.
+- **Users and tokens:** create them with `python -m cli.run admin user-create alice@example.com --role operator`
+  and `admin token-create alice@example.com`. Roles are `viewer`, `operator`, `reviewer` and `admin`;
+  a route that is not explicitly assigned a permission requires `admin`. Once any user exists,
+  authentication is required on every non-exempt route.
+  If you use Prism, set `GALAXZ_API_KEY` **before** creating the first user: Prism authenticates with that key,
+  and without it every Prism call returns 401 once a user exists.
+- Mutating and rejected requests are recorded in a tamper-evident audit log
+  (`GET /audit/events`, `python -m cli.run audit verify`).
+
+Multi-tenant data isolation, single sign-on and per-agent credentials are specified in
+`docs/specs/2026-11-07-v2-identity-governance-overview.md` and not implemented yet. Prism sends the
+configured `GALAXZ_API_KEY`, so everyone using one Prism deployment acts as that key's administrator
+until SSO lands.
 
 ## Contributing
 

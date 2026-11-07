@@ -200,3 +200,21 @@ def test_postgres_artifact_store_publishes_external_payload_and_enforces_scope(d
     assert row["object_id"] == "::a.txt/v1"
     with pytest.raises(PermissionError):
         store.get_version("::a.txt", 1, project_id="wrong")
+
+
+def test_account_store_works_against_the_migrated_postgres_schema(database):
+    from core.accounts.store import AccountError, AccountStore
+
+    migrate(database)
+    store = AccountStore(str(database.url), engine=database)
+    assert store.has_users() is False
+    store.create_user("a@x.io", "operator")
+    with pytest.raises(AccountError, match="already exists"):
+        store.create_user("A@x.io", "admin")
+    token, record = store.create_token("a@x.io", role="viewer", ttl_days=1)
+    principal = store.authenticate(token)
+    assert (principal.id, principal.role, principal.organization_id) == ("user:a@x.io", "viewer", "default")
+    store.revoke_token(record["id"])
+    assert store.authenticate(token) is None
+    store.deactivate_user("a@x.io")
+    assert store.has_users() is True

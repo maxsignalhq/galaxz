@@ -107,6 +107,7 @@ services:
       ARTIFACT_DB_PATH: /var/lib/galaxz/artifacts.db
       NEBULA_DB_PATH: /var/lib/galaxz/nebula.db
       GALAXZ_AUDIT_DB: /var/lib/galaxz/audit.db
+      GALAXZ_ACCOUNTS_DB: /var/lib/galaxz/accounts.db
       GALAXZ_SECRETS_DB: /var/lib/galaxz/secrets.db
       GALAXZ_WORKSPACE_ROOT: /workspace
       GALAXZ_WORKSPACE_ENABLED: "true"
@@ -151,6 +152,7 @@ services:
       ARTIFACT_DB_PATH: /var/lib/galaxz/artifacts.db
       NEBULA_DB_PATH: /var/lib/galaxz/nebula.db
       GALAXZ_AUDIT_DB: /var/lib/galaxz/audit.db
+      GALAXZ_ACCOUNTS_DB: /var/lib/galaxz/accounts.db
       GALAXZ_SECRETS_DB: /var/lib/galaxz/secrets.db
       GALAXZ_WORKSPACE_ROOT: /workspace
       GALAXZ_WORKSPACE_ENABLED: "true"

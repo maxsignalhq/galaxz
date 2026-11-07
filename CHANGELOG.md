@@ -24,6 +24,11 @@ the working tree. It is intended to be reviewed before the next GitHub push.
   denial/hold is written to a hash-chained, tamper-evident log (`GALAXZ_AUDIT_DB`),
   readable at `GET /audit/events`, verifiable with `GET /audit/verify` and
   `galaxz audit verify`. Safe for concurrent threads and processes.
+- Accounts and roles (phase A): users and expiring, revocable API tokens in the `default`
+  organization with `viewer`, `operator`, `reviewer` and `admin` roles enforced on every route
+  (undeclared routes require `admin`); `GET /auth/me`; `galaxz admin ...` management commands;
+  fine-tune and lesson approvals are attributed to the authenticated user. Migration
+  `0006_accounts`. `GALAXZ_API_KEY` keeps working as an administrator.
 - Secret references: `${{ secrets.<id> }}` in a `quasar.*` tool payload is resolved
   only while the tool runs (scoped to organization, repository and skill) and
   redacted from results and errors, so plaintext never reaches the goal, job,
