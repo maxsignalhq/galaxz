@@ -22,7 +22,7 @@ class _Registry:
 
 
 class _TaskLog:
-    def stats(self) -> dict:
+    def stats(self, **_) -> dict:
         return {"total": 0}
 
 

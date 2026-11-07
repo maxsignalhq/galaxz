@@ -36,17 +36,22 @@ class PostgresReviewQueue:
                 item[key] = json.loads(item[key])
         return item
 
-    def enqueue(self, task_id, task_type, confidence, payload, skill_id="", agent_id="", agent_output=None, sla_deadline=None, goal_id=None, planned_task_id=None, attempt_id=None):
+    def enqueue(self, task_id, task_type, confidence, payload, skill_id="", agent_id="", agent_output=None, sla_deadline=None, goal_id=None, planned_task_id=None, attempt_id=None, organization_id="default"):
         with self.engine.begin() as c:
             c.execute(text("""INSERT INTO review_queue
-                (task_id,task_type,skill_id,agent_id,agent_output,sla_deadline,confidence,payload,status,created_at,goal_id,planned_task_id,attempt_id)
-                VALUES (:task,:type,:skill,:agent,:output,:deadline,:confidence,:payload,'pending',:created,:goal,:planned,:attempt)
-                ON CONFLICT (task_id) DO NOTHING"""), {"task": task_id, "type": task_type, "skill": skill_id, "agent": agent_id, "output": json.dumps(agent_output or {}), "deadline": sla_deadline, "confidence": confidence, "payload": json.dumps(payload), "created": datetime.now(timezone.utc), "goal": goal_id, "planned": planned_task_id, "attempt": attempt_id})
+                (task_id,task_type,skill_id,agent_id,agent_output,sla_deadline,confidence,payload,status,created_at,goal_id,planned_task_id,attempt_id,organization_id)
+                VALUES (:task,:type,:skill,:agent,:output,:deadline,:confidence,:payload,'pending',:created,:goal,:planned,:attempt,:org)
+                ON CONFLICT (task_id) DO NOTHING"""), {"task": task_id, "type": task_type, "skill": skill_id, "agent": agent_id, "output": json.dumps(agent_output or {}), "deadline": sla_deadline, "confidence": confidence, "payload": json.dumps(payload), "created": datetime.now(timezone.utc), "goal": goal_id, "planned": planned_task_id, "attempt": attempt_id, "org": organization_id})
 
-    def get_pending(self):
+    def get_pending(self, *, organization_id):
         with self.engine.connect() as c:
-            rows = c.execute(text("SELECT * FROM review_queue WHERE status='pending' ORDER BY COALESCE(sla_deadline,'9999') ASC,created_at ASC")).mappings().all()
+            rows = c.execute(text("SELECT * FROM review_queue WHERE status='pending' AND (CAST(:org AS TEXT) IS NULL OR organization_id=:org) ORDER BY COALESCE(sla_deadline,'9999') ASC,created_at ASC"), {"org": organization_id}).mappings().all()
         return [self._row(row) for row in rows]
+
+    def get_for(self, task_id, *, organization_id):
+        """The item, or None when it is missing *or* another organization's."""
+        item = self.get_by_task_id(task_id)
+        return item if item is not None and item.get("organization_id") == organization_id else None
 
     def get_by_task_id(self, task_id):
         with self.engine.connect() as c:
@@ -58,11 +63,12 @@ class PostgresReviewQueue:
             result = c.execute(text("UPDATE review_queue SET status=:status,reviewed_at=:now,reviewer_notes=:notes WHERE task_id=:task AND status='pending'"), {"status": new_status, "now": datetime.now(timezone.utc), "notes": reviewer_notes, "task": task_id})
         return result.rowcount > 0
 
-    def get_stats(self):
+    def get_stats(self, *, organization_id):
+        scope = "(CAST(:org AS TEXT) IS NULL OR organization_id=:org)"
         with self.engine.connect() as c:
-            rows = c.execute(text("SELECT status,COUNT(*) AS count FROM review_queue GROUP BY status")).all()
-            oldest = c.execute(text("SELECT created_at FROM review_queue WHERE status='pending' ORDER BY created_at LIMIT 1")).scalar_one_or_none()
-            breached = c.execute(text("SELECT COUNT(*) FROM review_queue WHERE status='pending' AND sla_deadline IS NOT NULL AND sla_deadline < :now"), {"now": datetime.now(timezone.utc)}).scalar_one()
+            rows = c.execute(text(f"SELECT status,COUNT(*) AS count FROM review_queue WHERE {scope} GROUP BY status"), {"org": organization_id}).all()
+            oldest = c.execute(text(f"SELECT created_at FROM review_queue WHERE status='pending' AND {scope} ORDER BY created_at LIMIT 1"), {"org": organization_id}).scalar_one_or_none()
+            breached = c.execute(text(f"SELECT COUNT(*) FROM review_queue WHERE status='pending' AND sla_deadline IS NOT NULL AND sla_deadline < :now AND {scope}"), {"now": datetime.now(timezone.utc).isoformat(), "org": organization_id}).scalar_one()
         counts = {row[0]: row[1] for row in rows}
         age = None
         if oldest:
@@ -81,36 +87,38 @@ class PostgresTaskLog:
     def write(self, state):
         value = state.model_dump(mode="python")
         with self.engine.begin() as c:
-            c.execute(text("""INSERT INTO tasks(task_id,task_type,assigned_agent,status,confidence,retry_count,escalated_to_human,failure_reason,issued_at,completed_at,payload_json,result_json)
-                VALUES (:id,:type,:agent,:status,:confidence,:retry,:escalated,:failure,:issued,:completed,:payload,:result)
-                ON CONFLICT (task_id,status) DO UPDATE SET task_type=EXCLUDED.task_type,assigned_agent=EXCLUDED.assigned_agent,confidence=EXCLUDED.confidence,retry_count=EXCLUDED.retry_count,escalated_to_human=EXCLUDED.escalated_to_human,failure_reason=EXCLUDED.failure_reason,issued_at=EXCLUDED.issued_at,completed_at=EXCLUDED.completed_at,payload_json=EXCLUDED.payload_json,result_json=EXCLUDED.result_json"""), {"id": value["task_id"], "type": value.get("task_type"), "agent": value.get("assigned_agent"), "status": value.get("status"), "confidence": value.get("confidence"), "retry": value.get("retry_count", 0), "escalated": bool(value.get("escalated_to_human")), "failure": value.get("failure_reason"), "issued": value.get("issued_at"), "completed": value.get("completed_at"), "payload": json.dumps(value.get("payload", {})), "result": json.dumps(value.get("result") or {})})
+            c.execute(text("""INSERT INTO tasks(task_id,task_type,assigned_agent,status,confidence,retry_count,escalated_to_human,failure_reason,issued_at,completed_at,payload_json,result_json,organization_id)
+                VALUES (:id,:type,:agent,:status,:confidence,:retry,:escalated,:failure,:issued,:completed,:payload,:result,:org)
+                ON CONFLICT (task_id,status) DO UPDATE SET task_type=EXCLUDED.task_type,assigned_agent=EXCLUDED.assigned_agent,confidence=EXCLUDED.confidence,retry_count=EXCLUDED.retry_count,escalated_to_human=EXCLUDED.escalated_to_human,failure_reason=EXCLUDED.failure_reason,issued_at=EXCLUDED.issued_at,completed_at=EXCLUDED.completed_at,payload_json=EXCLUDED.payload_json,result_json=EXCLUDED.result_json"""), {"id": value["task_id"], "type": value.get("task_type"), "agent": value.get("assigned_agent"), "status": value.get("status"), "confidence": value.get("confidence"), "retry": value.get("retry_count", 0), "escalated": 1 if value.get("escalated_to_human") else 0, "failure": value.get("failure_reason"), "issued": value.get("issued_at"), "completed": value.get("completed_at"), "payload": json.dumps(value.get("payload", {})), "result": json.dumps(value.get("result") or {}), "org": value.get("organization_id") or "default"})
 
-    def get(self, task_id):
+    def get(self, task_id, *, organization_id):
+        """The latest row, or None when missing or another organization's (``None`` = platform internals)."""
         with self.engine.connect() as c:
-            row = c.execute(text("SELECT * FROM tasks WHERE task_id=:id ORDER BY issued_at DESC LIMIT 1"), {"id": task_id}).mappings().first()
+            row = c.execute(text("SELECT * FROM tasks WHERE task_id=:id AND (CAST(:org AS TEXT) IS NULL OR organization_id=:org) ORDER BY issued_at DESC LIMIT 1"), {"id": task_id, "org": organization_id}).mappings().first()
         return dict(row) if row else None
 
     def update_status(self, task_id, task_type, new_status):
         with self.engine.begin() as c:
-            c.execute(text("""INSERT INTO tasks(task_id,task_type,status,issued_at,completed_at,payload_json,result_json,retry_count,escalated_to_human)
-                VALUES (:id,:type,:status,:now,:now,'{}','{}',0,0) ON CONFLICT (task_id,status) DO NOTHING"""), {"id": task_id, "type": task_type, "status": new_status, "now": datetime.now(timezone.utc)})
+            c.execute(text("""INSERT INTO tasks(task_id,task_type,status,issued_at,completed_at,payload_json,result_json,retry_count,escalated_to_human,organization_id)
+                VALUES (:id,:type,:status,:now,:now,'{}','{}',0,0,COALESCE((SELECT organization_id FROM tasks WHERE task_id=:id LIMIT 1),'default')) ON CONFLICT (task_id,status) DO NOTHING"""), {"id": task_id, "type": task_type, "status": new_status, "now": datetime.now(timezone.utc)})
 
-    def recent(self, limit=50):
+    def recent(self, limit=50, *, organization_id):
         with self.engine.connect() as c:
-            return [dict(row) for row in c.execute(text("SELECT * FROM tasks ORDER BY issued_at DESC LIMIT :limit"), {"limit": limit}).mappings()]
+            return [dict(row) for row in c.execute(text("SELECT * FROM tasks WHERE (CAST(:org AS TEXT) IS NULL OR organization_id=:org) ORDER BY issued_at DESC LIMIT :limit"), {"limit": limit, "org": organization_id}).mappings()]
 
-    def throughput(self, hours=24):
+    def throughput(self, hours=24, *, organization_id):
         with self.engine.connect() as c:
             rows = c.execute(text("""SELECT to_char(date_trunc('hour', issued_at::timestamptz), 'YYYY-MM-DD"T"HH24:00') AS bucket,
                 COUNT(*) AS count FROM tasks
                 WHERE issued_at::timestamptz >= now() - (:hours * INTERVAL '1 hour')
                   AND status IN ('complete','failed','escalated')
-                GROUP BY 1 ORDER BY 1"""), {"hours": hours}).all()
+                  AND (CAST(:org AS TEXT) IS NULL OR organization_id=:org)
+                GROUP BY 1 ORDER BY 1"""), {"hours": hours, "org": organization_id}).all()
         return [{"bucket": row[0], "count": row[1]} for row in rows]
 
-    def stats(self):
+    def stats(self, *, organization_id):
         with self.engine.connect() as c:
-            row = c.execute(text("SELECT COUNT(*) AS total,COUNT(*) FILTER (WHERE status='complete') AS complete,COUNT(*) FILTER (WHERE status='failed') AS failed,COUNT(*) FILTER (WHERE status='escalated') AS escalated FROM tasks")).mappings().one()
+            row = c.execute(text("SELECT COUNT(*) AS total,COUNT(*) FILTER (WHERE status='complete') AS complete,COUNT(*) FILTER (WHERE status='failed') AS failed,COUNT(*) FILTER (WHERE status='escalated') AS escalated FROM tasks WHERE (CAST(:org AS TEXT) IS NULL OR organization_id=:org)"), {"org": organization_id}).mappings().one()
         return dict(row)
 
 

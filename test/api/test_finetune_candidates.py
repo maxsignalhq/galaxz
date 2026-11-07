@@ -31,11 +31,11 @@ def _fake_andromeda():
             return []
 
     class FakeTaskLog:
-        def stats(self):
+        def stats(self, **_):
             return {"total": 0}
 
     class FakeReviewQueue:
-        def get_pending(self):
+        def get_pending(self, **_):
             return []
 
     class Fake:

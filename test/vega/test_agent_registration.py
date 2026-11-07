@@ -97,7 +97,7 @@ def test_andromeda_routes_requirements_to_test_cases_via_registry(monkeypatch, t
     assert state["result"]["total_count"] == 1
     assert "selected vega" in state["assignment_reason"]
 
-    persisted = task_log.get(state["task_id"])
+    persisted = task_log.get(state["task_id"], organization_id=None)
     assert persisted is not None
     assert persisted["assigned_agent"] == "vega"
 
