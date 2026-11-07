@@ -1,6 +1,6 @@
 # Accounts, roles and multi-tenancy — design
 
-Date: 2026-11-07. Depends on: audit logging. Status: drafted at the maintainer's request; **phase A implemented** (phases B and C are not).
+Date: 2026-11-07. Depends on: audit logging. Status: drafted at the maintainer's request; **phase A implemented** (phase B proposed, C not).
 
 ## Problem
 Auth is one shared `GALAXZ_API_KEY`. Everyone who has it is an administrator, and the identity
@@ -42,11 +42,81 @@ non-exempt route is `admin`, so a forgotten route fails closed.
 - `reviewed_by` stays in request models for one release, ignored when an authenticated user principal
   exists (the principal id is recorded instead) and still honored for the legacy `api-key` principal.
 
-## Tenant scoping (phase B, separate PR)
-Add `organization_id` to goals, repositories, jobs, memory and artifacts (already present). Every
-store read/write takes the caller's organization; a row from another organization is reported as
-404, never 403, so existence does not leak. Background workers act on behalf of the task's
-organization, taken from the goal. Per-organization quotas reuse `core.platform.enforce_quota`.
+## Tenant scoping (phase B)
+
+Status: **proposed answers, not yet reviewed.** Phase A shipped one `default` organization; B makes the
+organization boundary real. Correction to the text this replaces: only `artifact_versions` carries an
+`organization_id` today (nullable, used by object-storage authorization). Goals, tasks, jobs, the review
+queue, repositories and memory have none.
+
+### Decision 1: what is scoped
+
+| Store | Scoped by | How |
+|---|---|---|
+| `goals` | `organization_id` column | root of the goal tree; `projects`, `planned_tasks`, `goal_events`, `goal_repositories` inherit through `goal_id` (no denormalised column) |
+| `tasks` (task log), `review_queue` | own `organization_id` column | queried by `task_id` directly, so they cannot rely on a join |
+| `jobs` | own `organization_id` column | the worker needs the organization without loading the goal; child job tables inherit through `job_id` |
+| `repositories`, `repository_revisions` | `organization_id` column | repository ids become unique per organization |
+| `memories` (Nebula) | `organization_id` column | recall must filter by organization: a leak here puts another tenant's notes into a prompt |
+| `artifact_versions` | existing column, made NOT NULL | already scoped in object storage |
+| `policy_grants` | `organization_id` column | grants are authority; they must not cross tenants |
+| Orion (fine-tune candidates, lessons, scorecards) | **B2**, separate PR | Orion is a separate service with its own stores; scope after the core path is proven |
+| Pulsar registry, LLM limiter, provider config | **global** | agents are platform resources shared by all tenants |
+| Audit log | **global**, `organization_id` recorded per event | one tamper-evident chain; `audit:read` stays admin-only; events gain an `organization_id` field so exports can be filtered |
+| Secrets | already scoped | `SecretScope.organization_id` is unchanged |
+
+The organization is stamped from the authenticated principal when a row is created and never changes.
+`TaskContract` gains an optional `organization_id` (absent = `default`), set by Andromeda from the
+principal; per "contracts first" this contract change lands before any store change. The worker takes the
+organization from the job and passes it down, so a goal always executes as its own organization.
+
+### Decision 2: existing rows
+
+Migration `0007_organization_scope` adds `organization_id TEXT NOT NULL DEFAULT 'default'` to each table
+above, which backfills every existing row into `default` with no data rewrite. SQLite stores add the column
+the same way `ArtifactStore` already does. A deployment that never creates a second organization sees no
+behaviour change. `job_idempotency` keys become `(organization_id, key)` so two tenants cannot collide or
+probe each other's keys.
+
+### Decision 3: where isolation is enforced
+
+In the application layer (the earlier accepted decision), made hard to forget:
+- Every store read and write takes `organization_id` as a **required keyword argument with no default**.
+  Omitting it is a `TypeError`, not an unscoped query. Internal system actors (migrations, the reconcile
+  loop listing work across tenants) call separate, explicitly named `*_all_organizations` methods.
+- A row in another organization is reported as 404, never 403.
+- New organizations are created from the CLI only: `galaxz admin org-create`, and `user-create
+  --organization`. The legacy `GALAXZ_API_KEY` stays an `admin` of `default` only; it cannot reach other
+  organizations. Cross-organization administration is a local CLI operation.
+- PostgreSQL row-level security stays a non-goal for B. If wanted later it can be added as a second layer
+  (`SET app.organization_id` per connection) without changing the application contract.
+
+### Prerequisite: close the exempt reads
+
+`GET /review/queue`, `/tasks/recent`, `/status`, `/agents` are unauthenticated and return task data. They
+cannot be scoped without a principal, so B makes them require `read` (health stays exempt). This breaks any
+unauthenticated monitor that scrapes them; it is called out in the CHANGELOG.
+
+### Delivery
+
+1. **B1** — `TaskContract.organization_id`, migration `0007`, goals/tasks/jobs/worker, `org-create`, close
+   the exempt reads.
+2. **B2** — review queue, artifacts, repositories, memory, policy grants.
+3. **B3** — Orion stores.
+
+Each PR keeps single-organization behaviour byte-for-byte. Tests: a two-organization fixture and a test
+that walks every route taking an id and asserts organization B receives 404 for organization A's id; a
+no-default-argument check on the store methods; a Postgres test of the migration against a populated
+database.
+
+### Risks to review
+
+- Nebula recall and policy grants are the two places a leak turns into prompt content or authority, so they
+  are in B2 with their own cross-tenant tests.
+- GitHub App installations and repository registrations must be tied to an organization; B2 decides
+  whether an installation is per organization or shared.
+- Application-layer filtering depends on every query remembering the filter; the required-keyword
+  signature and the route-walk test are the guard, not RLS.
 
 ## Phases
 A. users/orgs/tokens/RBAC on the existing single `default` org (ships value alone: real identities
