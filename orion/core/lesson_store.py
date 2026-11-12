@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS lesson_candidates (
     reviewed_at   TEXT,
     reviewed_by   TEXT,
     reviewer_note TEXT,
-    memory_id     TEXT
+    memory_id     TEXT,
+    organization_id TEXT NOT NULL DEFAULT 'default'
 )
 """
 _CREATE_SOURCES = "CREATE TABLE IF NOT EXISTS lesson_sources (event_id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL)"
@@ -43,6 +44,7 @@ class LessonCandidate(BaseModel):
     reviewed_by: Optional[str] = None
     reviewer_note: Optional[str] = None
     memory_id: Optional[str] = None
+    organization_id: str = "default"
 
 
 def _now() -> str:
@@ -63,6 +65,8 @@ class LessonStore:
         with self._connect() as conn:
             conn.execute(_CREATE_CANDIDATES)
             conn.execute(_CREATE_SOURCES)
+            if "organization_id" not in {row[1] for row in conn.execute("PRAGMA table_info(lesson_candidates)")}:
+                conn.execute("ALTER TABLE lesson_candidates ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default'")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
@@ -75,7 +79,9 @@ class LessonStore:
         data["evidence"] = json.loads(data["evidence"])
         return LessonCandidate(**data)
 
-    def add(self, skill_id: str, agent_id: str, content: str, evidence: list[str]) -> LessonCandidate:
+    def add(
+        self, skill_id: str, agent_id: str, content: str, evidence: list[str], organization_id: str = "default"
+    ) -> LessonCandidate:
         candidate = LessonCandidate(
             candidate_id=str(uuid4()),
             skill_id=skill_id,
@@ -83,14 +89,15 @@ class LessonStore:
             content=normalize(content),
             evidence=list(evidence),
             created_at=_now(),
+            organization_id=organization_id,
         )
         with self._lock, self._connect() as conn:
             conn.execute(
-                "INSERT INTO lesson_candidates (candidate_id, skill_id, agent_id, content, evidence, status, created_at) "
-                "VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+                "INSERT INTO lesson_candidates (candidate_id, skill_id, agent_id, content, evidence, status, created_at, organization_id) "
+                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
                 (
                     candidate.candidate_id, skill_id, agent_id, candidate.content,
-                    json.dumps(candidate.evidence), candidate.created_at,
+                    json.dumps(candidate.evidence), candidate.created_at, organization_id,
                 ),
             )
             conn.executemany(
@@ -110,29 +117,32 @@ class LessonStore:
                 [(event_id, candidate_id) for event_id in event_ids],
             )
 
-    def has_content(self, skill_id: str, content: str) -> bool:
-        """True when this lesson is already pending or approved for the skill."""
+    def has_content(self, skill_id: str, content: str, organization_id: str = "default") -> bool:
+        """True when this lesson is already pending or approved for the skill in the organization."""
         wanted = normalize(content).lower()
         with self._lock, self._connect() as conn:
             rows = conn.execute(
-                "SELECT content FROM lesson_candidates WHERE skill_id = ? AND status IN ('pending', 'approved')",
-                (skill_id,),
+                "SELECT content FROM lesson_candidates WHERE skill_id = ? AND organization_id = ? "
+                "AND status IN ('pending', 'approved')",
+                (skill_id, organization_id),
             ).fetchall()
         return any(normalize(r["content"]).lower() == wanted for r in rows)
 
-    def get(self, candidate_id: str) -> Optional[LessonCandidate]:
+    def get(self, candidate_id: str, *, organization_id: str | None) -> Optional[LessonCandidate]:
+        """``None`` or another organization's candidate reads as missing (``organization_id=None``: platform internals)."""
         with self._lock, self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM lesson_candidates WHERE candidate_id = ?", (candidate_id,)
+                "SELECT * FROM lesson_candidates WHERE candidate_id = ? AND (? IS NULL OR organization_id = ?)",
+                (candidate_id, organization_id, organization_id),
             ).fetchone()
         return self._candidate(row) if row else None
 
-    def list(self, status: str | None = "pending") -> list[LessonCandidate]:
-        query = "SELECT * FROM lesson_candidates"
-        params: tuple = ()
+    def list(self, status: str | None = "pending", *, organization_id: str | None) -> list[LessonCandidate]:
+        query = "SELECT * FROM lesson_candidates WHERE (? IS NULL OR organization_id = ?)"
+        params: tuple = (organization_id, organization_id)
         if status is not None:
-            query += " WHERE status = ?"
-            params = (status,)
+            query += " AND status = ?"
+            params = (*params, status)
         with self._lock, self._connect() as conn:
             rows = conn.execute(query + " ORDER BY created_at ASC, candidate_id ASC", params).fetchall()
         return [self._candidate(r) for r in rows]

@@ -318,6 +318,7 @@ class RigelAgent:
             execution_outcome=confidence_data["execution_outcome"],
             latency_ms=execution_result.duration_ms if execution_result is not None else 0,
             outcome=_feedback_outcome(execution_result),
+            organization_id=(context or {}).get("organization_id") or "default",
         )
 
         return task_result
@@ -337,6 +338,7 @@ class RigelAgent:
         execution_outcome: str | None,
         latency_ms: int,
         outcome: str,
+        organization_id: str = "default",
     ) -> None:
         aether = get_aether_client()
         try:
@@ -348,6 +350,7 @@ class RigelAgent:
                 confidence_score=confidence_score,
                 execution_outcome=execution_outcome,
                 latency_ms=latency_ms,
+                organization_id=organization_id,
             )
             aether.publish_event(FEEDBACK_STREAM, feedback.model_dump(mode="json"))
         except Exception as exc:

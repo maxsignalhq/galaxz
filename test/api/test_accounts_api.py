@@ -192,7 +192,7 @@ def test_lesson_decisions_are_attributed_to_the_authenticated_user(monkeypatch):
     claimed = []
 
     class Lessons:
-        def get(self, candidate_id):
+        def get(self, candidate_id, **_):
             return object()
 
         def claim(self, candidate_id, status, reviewed_by, note, edited=None):

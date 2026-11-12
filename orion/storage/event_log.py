@@ -77,6 +77,10 @@ class EventLog:
                     domain          TEXT
                 )
             """)
+            for table in ("feedback_events", "events"):
+                columns = {row[1] for row in await (await db.execute(f"PRAGMA table_info({table})")).fetchall()}
+                if "organization_id" not in columns:
+                    await db.execute(f"ALTER TABLE {table} ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default'")
             await db.commit()
 
     # ------------------------------------------------------------------
@@ -100,8 +104,8 @@ class EventLog:
                 """
                 INSERT OR IGNORE INTO events
                     (id, task_id, skill_id, agent_id, domain, outcome, confidence,
-                     human_verified, human_correction, latency_ms, quarantined)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     human_verified, human_correction, latency_ms, quarantined, organization_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event_id,
@@ -115,6 +119,7 @@ class EventLog:
                     event.human_correction,
                     event.latency_ms,
                     1 if quarantined else 0,
+                    event.organization_id,
                 ),
             )
             await db.commit()
@@ -132,7 +137,7 @@ class EventLog:
             cursor = await db.execute(
                 """
                 SELECT * FROM events
-                WHERE quarantined = 0
+                WHERE quarantined = 0 AND organization_id = 'default'
                   AND (
                       (human_verified = 1)
                       OR (confidence >= 0.9 AND outcome = 'success')
@@ -162,7 +167,7 @@ class EventLog:
             cursor = await db.execute(
                 """
                 SELECT * FROM events
-                WHERE quarantined = 0 AND exported_at IS NULL
+                WHERE quarantined = 0 AND exported_at IS NULL AND organization_id = 'default'
                 ORDER BY created_at ASC
                 """
             )
@@ -198,7 +203,7 @@ class EventLog:
                 cur = await db.execute(
                     """
                     SELECT domain, COUNT(*) FROM events
-                    WHERE quarantined = 0 AND exported_at IS NULL
+                    WHERE quarantined = 0 AND exported_at IS NULL AND organization_id = 'default'
                     GROUP BY domain
                     """
                 )
@@ -308,8 +313,8 @@ class EventLog:
                 INSERT INTO feedback_events
                     (id, task_id, task_category, agent_id, outcome,
                      confidence_score, input_hash, agent_output,
-                     human_correction, latency_ms, timestamp, quarantined)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                     human_correction, latency_ms, timestamp, quarantined, organization_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                 """,
                 (
                     event_id,
@@ -323,6 +328,7 @@ class EventLog:
                     json.dumps(event.human_correction) if event.human_correction is not None else None,
                     event.latency_ms,
                     event.timestamp.isoformat(),
+                    event.organization_id,
                 ),
             )
             await db.commit()
@@ -355,7 +361,7 @@ class EventLog:
                 """
                 SELECT * FROM feedback_events
                 WHERE task_category = ?
-                  AND quarantined = 0
+                  AND quarantined = 0 AND organization_id = 'default'
                   AND timestamp >= ?
                 ORDER BY timestamp ASC
                 """,
@@ -368,7 +374,7 @@ class EventLog:
     async def list_domains(self) -> list[str]:
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT DISTINCT task_category FROM feedback_events WHERE quarantined = 0"
+                "SELECT DISTINCT task_category FROM feedback_events WHERE quarantined = 0 AND organization_id = 'default'"
             )
             rows = await cursor.fetchall()
         return [row[0] for row in rows]
@@ -387,7 +393,7 @@ class EventLog:
                 """
                 SELECT * FROM feedback_events
                 WHERE agent_id = ?
-                  AND quarantined = 0
+                  AND quarantined = 0 AND organization_id = 'default'
                   AND timestamp >= ?
                 ORDER BY timestamp ASC
                 """,
@@ -409,5 +415,6 @@ def _row_to_event(row: aiosqlite.Row) -> FeedbackEvent:
         agent_output=json.loads(row["agent_output"]),
         human_correction=json.loads(row["human_correction"]) if row["human_correction"] else None,
         latency_ms=row["latency_ms"],
+        organization_id=row["organization_id"],
         timestamp=datetime.fromisoformat(row["timestamp"]),
     )

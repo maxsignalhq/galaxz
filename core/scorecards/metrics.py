@@ -32,7 +32,9 @@ def _iso(moment: datetime) -> str:
     return moment.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _scorecard(agent_id: str, skill_id: str, rows: list[tuple], *, issuer: str, days: int, now: datetime) -> dict:
+def _scorecard(
+    agent_id: str, skill_id: str, rows: list[tuple], *, issuer: str, days: int, now: datetime, organization_id: str | None = None
+) -> dict:
     tasks = len(rows)
     outcomes = [r[0] for r in rows]
     successes = outcomes.count("success")
@@ -41,7 +43,8 @@ def _scorecard(agent_id: str, skill_id: str, rows: list[tuple], *, issuer: str, 
     return {
         "version": SCORECARD_VERSION,
         "issuer": issuer,
-        "subject": {"agent_id": agent_id, "skill_id": skill_id},
+        # Only other organizations are named, so platform-wide (`default`) cards stay byte-identical.
+        "subject": {"agent_id": agent_id, "skill_id": skill_id, **({"organization_id": organization_id} if organization_id not in (None, "default") else {})},
         "issued_at": _iso(now),
         "window": {"from": _iso(now - timedelta(days=days)), "to": _iso(now), "days": days},
         "metrics": {
@@ -66,16 +69,18 @@ def build_scorecards(
     issuer: str = "galaxz",
     skill_id: str | None = None,
     now: datetime | None = None,
+    organization_id: str | None,
 ) -> list[dict]:
+    """Scorecards over one organization's events (``None`` = every organization, platform internals only)."""
     if not os.path.exists(db_path):
         return []
     now = now or datetime.now(timezone.utc)
     cutoff = (now - timedelta(days=days)).astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     query = (
         "SELECT agent_id, skill_id, outcome, confidence, human_verified, latency_ms FROM events "
-        "WHERE quarantined = 0 AND created_at >= ?"
+        "WHERE quarantined = 0 AND created_at >= ? AND (? IS NULL OR organization_id = ?)"
     )
-    params: list = [cutoff]
+    params: list = [cutoff, organization_id, organization_id]
     if skill_id is not None:
         query += " AND skill_id = ?"
         params.append(skill_id)
@@ -88,6 +93,6 @@ def build_scorecards(
     for agent_id, skill, outcome, confidence, verified, latency in fetched:
         groups.setdefault((skill, agent_id), []).append((outcome, confidence or 0.0, verified, latency))
     return [
-        _scorecard(agent, skill, rows, issuer=issuer, days=days, now=now)
+        _scorecard(agent, skill, rows, issuer=issuer, days=days, now=now, organization_id=organization_id)
         for (skill, agent), rows in sorted(groups.items())
     ]

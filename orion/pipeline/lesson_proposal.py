@@ -37,15 +37,16 @@ def _clip(value) -> str:
     return " ".join(text.split())[:_FIELD_CHARS]
 
 
-def _correction_groups(events_db: str, used: set[str]) -> dict[tuple[str, str], list[dict]]:
+def _correction_groups(events_db: str, used: set[str], organization_id: str) -> dict[tuple[str, str], list[dict]]:
     groups: dict[tuple[str, str], list[dict]] = {}
     try:
         with sqlite3.connect(events_db) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT id, skill_id, agent_id, payload, result, human_correction FROM events "
-                "WHERE quarantined = 0 AND human_correction IS NOT NULL AND TRIM(human_correction) != '' "
-                "ORDER BY created_at ASC, id ASC"
+                "WHERE quarantined = 0 AND organization_id = ? AND human_correction IS NOT NULL "
+                "AND TRIM(human_correction) != '' ORDER BY created_at ASC, id ASC",
+                (organization_id,),
             ).fetchall()
     except sqlite3.Error:
         return {}
@@ -96,12 +97,13 @@ def propose_lessons(
     *,
     min_examples: int = MIN_EXAMPLES,
     max_examples: int = MAX_EXAMPLES,
+    organization_id: str = "default",
 ) -> list[LessonCandidate]:
-    """Create pending candidates. This function has no access to Nebula by design."""
+    """Create pending candidates from one organization's corrections. No access to Nebula by design."""
     if not os.path.exists(events_db):
         return []
     created: list[LessonCandidate] = []
-    groups = _correction_groups(events_db, store.used_event_ids())
+    groups = _correction_groups(events_db, store.used_event_ids(), organization_id)
     for (skill_id, agent_id), events in sorted(groups.items()):
         if len(events) < min_examples:
             continue
@@ -112,9 +114,9 @@ def propose_lessons(
         except Exception as exc:  # LLM outage or unusable reply: leave the events for a retry
             logger.warning("[lessons] no proposal for %s: %s", skill_id, exc.__class__.__name__)
             continue
-        fresh = [lesson for lesson in lessons if not store.has_content(skill_id, lesson)]
+        fresh = [lesson for lesson in lessons if not store.has_content(skill_id, lesson, organization_id)]
         if lessons and not fresh:
             store.mark_used(evidence, _DUPLICATE)  # already covered; do not pay for it again
             continue
-        created.extend(store.add(skill_id, agent_id, lesson, evidence) for lesson in fresh)
+        created.extend(store.add(skill_id, agent_id, lesson, evidence, organization_id) for lesson in fresh)
     return created

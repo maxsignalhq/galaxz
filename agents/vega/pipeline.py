@@ -62,6 +62,7 @@ def run_vega_pipeline(
     test_results: list[dict] | dict | None = None,
     config_path: str = "config/providers.yaml",
     source_type: str = "plain",
+    organization_id: str = "default",
 ) -> dict:
     config = load_provider_config(config_path)
     aether = get_aether_client()
@@ -173,6 +174,7 @@ def run_vega_pipeline(
                 outcome=outcome,
                 confidence_score=confidence,
                 latency_ms=elapsed_ms,
+                organization_id=organization_id,
             )
             aether.publish_event(FEEDBACK_STREAM, feedback.model_dump(mode="json"))
         except Exception as exc:

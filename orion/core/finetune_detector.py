@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import aiosqlite
+
+from orion.storage.schema import ensure_organization_columns
 import redis.asyncio as aioredis
 import yaml
 
@@ -55,12 +57,13 @@ class FinetuneDetector:
         return emitted
 
     async def _query_agent_stats(self) -> list[tuple[str, int, float]]:
+        ensure_organization_columns(self._events_db_path)  # an older file may predate tenancy
         async with aiosqlite.connect(self._events_db_path) as db:
             cursor = await db.execute(
                 """
                 SELECT agent_id, COUNT(*) AS example_count, AVG(confidence) AS quality_avg
                 FROM events
-                WHERE quarantined = 0
+                WHERE quarantined = 0 AND organization_id = 'default'
                 GROUP BY agent_id
                 HAVING COUNT(*) > 0
                 """

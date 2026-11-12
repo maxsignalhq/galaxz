@@ -186,6 +186,8 @@ class HeuristicGenerator:
                 columns = _table_columns(conn, "feedback_events")
                 if "quarantined" in columns:
                     where += " AND quarantined = 0"
+                if "organization_id" in columns:
+                    where += " AND organization_id = 'default'"  # tenant feedback never shapes shared heuristics
                 cursor = conn.execute(
                     f"""
                     SELECT task_category, agent_id, outcome, confidence_score, timestamp

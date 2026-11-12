@@ -41,6 +41,7 @@ from core.security.audit import default_audit_log
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
 from core.nebula.store import SKILL_NAMESPACE_PREFIX
+from orion.storage.schema import ensure_organization_columns
 from core.storage.manage import validate_runtime_database_configuration
 from orion.core.lesson_store import MAX_LESSON_CHARS, LessonStore, normalize as normalize_lesson
 from orion.pipeline.lesson_proposal import propose_lessons
@@ -94,10 +95,18 @@ def _workspace_path_for_container(host_path: str) -> str:
     raise HTTPException(status_code=422, detail=f"workspace folder does not exist: {candidate}")
 
 
+_orion_schema_checked: set[str] = set()
+
+
 def _orion_db_path() -> str:
     orion = getattr(_andromeda, "orion", None)
     config = getattr(orion, "_cfg", None)
-    return getattr(config, "db_path", "orion/data/events.db")
+    path = getattr(config, "db_path", "orion/data/events.db")
+    if path not in _orion_schema_checked:
+        ensure_organization_columns(path)  # the API reads this file directly and can start before Orion
+        if os.path.exists(path):
+            _orion_schema_checked.add(path)
+    return path
 
 
 _andromeda: Andromeda = None
@@ -1332,7 +1341,8 @@ def get_orion_status():
 
 
 @app.get("/orion/analytics")
-def get_orion_analytics(hours: int = 24):
+def get_orion_analytics(request: Request, hours: int = 24):
+    org = _organization(request)
     hours = max(1, min(hours, 168))
     db_path = _orion_db_path()
     if not os.path.exists(db_path):
@@ -1343,15 +1353,17 @@ def get_orion_analytics(hours: int = 24):
                 """
                 SELECT strftime('%Y-%m-%dT%H:00', created_at) AS bucket, COUNT(*) AS count
                 FROM events
-                WHERE created_at >= datetime('now', ? || ' hours') AND quarantined = 0
+                WHERE created_at >= datetime('now', ? || ' hours') AND quarantined = 0 AND organization_id = ?
                 GROUP BY bucket ORDER BY bucket ASC
                 """,
-                (f"-{hours}",),
+                (f"-{hours}", org),
             )
             event_volume = [{"bucket": r[0], "count": r[1]} for r in cur.fetchall()]
 
             cur = conn.execute(
-                "SELECT domain, COUNT(*) FROM events WHERE quarantined=0 GROUP BY domain ORDER BY COUNT(*) DESC"
+                "SELECT domain, COUNT(*) FROM events WHERE quarantined=0 AND organization_id = ? "
+                "GROUP BY domain ORDER BY COUNT(*) DESC",
+                (org,),
             )
             by_domain = [{"domain": r[0], "count": r[1]} for r in cur.fetchall()]
 
@@ -1360,9 +1372,10 @@ def get_orion_analytics(hours: int = 24):
                 SELECT agent_id, COUNT(*) AS total,
                        AVG(confidence) AS avg_conf,
                        SUM(CASE WHEN outcome='success' THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS success_rate
-                FROM events WHERE quarantined=0
+                FROM events WHERE quarantined=0 AND organization_id = ?
                 GROUP BY agent_id ORDER BY total DESC
-                """
+                """,
+                (org,),
             )
             by_agent = [
                 {
@@ -1375,7 +1388,8 @@ def get_orion_analytics(hours: int = 24):
             ]
 
             cur = conn.execute(
-                "SELECT outcome, COUNT(*) FROM events WHERE quarantined=0 GROUP BY outcome"
+                "SELECT outcome, COUNT(*) FROM events WHERE quarantined=0 AND organization_id = ? GROUP BY outcome",
+                (org,),
             )
             outcome_counts = {r[0]: r[1] for r in cur.fetchall()}
 
@@ -1410,10 +1424,11 @@ def _require_scorecard_signer() -> ScorecardSigner:
     return signer
 
 
-def _signed_scorecards(days: int, skill_id: str | None = None) -> list[dict]:
+def _signed_scorecards(days: int, skill_id: str | None = None, *, organization_id: str) -> list[dict]:
     signer = _require_scorecard_signer()
     cards = build_scorecards(
-        _orion_db_path(), days=days, issuer=os.getenv("GALAXZ_SCORECARD_ISSUER", "galaxz"), skill_id=skill_id
+        _orion_db_path(), days=days, issuer=os.getenv("GALAXZ_SCORECARD_ISSUER", "galaxz"), skill_id=skill_id,
+        organization_id=organization_id,
     )
     return [signer.sign(card) for card in cards]
 
@@ -1424,13 +1439,13 @@ def get_scorecard_key():
 
 
 @app.get("/scorecards")
-def list_scorecards(days: int = Query(30, ge=1, le=365)):
-    return {"scorecards": _signed_scorecards(days)}
+def list_scorecards(request: Request, days: int = Query(30, ge=1, le=365)):
+    return {"scorecards": _signed_scorecards(days, organization_id=_organization(request))}
 
 
 @app.get("/scorecards/{skill_id}")
-def get_skill_scorecards(skill_id: str, days: int = Query(30, ge=1, le=365)):
-    cards = _signed_scorecards(days, skill_id)
+def get_skill_scorecards(skill_id: str, request: Request, days: int = Query(30, ge=1, le=365)):
+    cards = _signed_scorecards(days, skill_id, organization_id=_organization(request))
     if not cards:
         raise HTTPException(status_code=404, detail="no Orion events for this skill in the window")
     return {"scorecards": cards}
@@ -1459,6 +1474,7 @@ def approve_task(task_id: str, request: Request, req: ResolveRequest = ResolveRe
         _release_goal_task_after_review(item, held)
 
     event = FeedbackEvent(
+        organization_id=item.get("organization_id") or "default",
         task_id=_feedback_task_id(task_id, item),
         task_category=item.get("task_type") or "unknown",
         agent_id="human_reviewer",
@@ -1489,6 +1505,7 @@ def accept_task(task_id: str, request: Request, req: ResolveRequest = ResolveReq
         _release_goal_task_after_review(item, held)
 
     event = FeedbackEvent(
+        organization_id=item.get("organization_id") or "default",
         task_id=_feedback_task_id(task_id, item),
         task_category=item.get("task_type") or "unknown",
         agent_id="human_reviewer",
@@ -1518,6 +1535,7 @@ def reject_task(task_id: str, request: Request, req: ResolveRequest = ResolveReq
         _resume_goal_from_review(item["task_id"], item["goal_id"], approved=False)
 
     event = FeedbackEvent(
+        organization_id=item.get("organization_id") or "default",
         task_id=_feedback_task_id(task_id, item),
         task_category=item.get("task_type") or "unknown",
         agent_id="human_reviewer",
@@ -1545,6 +1563,7 @@ def submit_task_feedback(task_id: str, req: TaskFeedbackRequest, request: Reques
     except (json.JSONDecodeError, TypeError):
         result_data = {}
     event = FeedbackEvent(
+        organization_id=_organization(request),
         task_id=task_id,
         task_category=task.get("task_type") or "unknown",
         agent_id="human_reviewer",
@@ -1619,24 +1638,25 @@ class LessonReviewRequest(BaseModel):
 
 
 @app.post("/lessons/propose")
-def propose_skill_lessons(req: LessonProposeRequest = LessonProposeRequest()):
+def propose_skill_lessons(request: Request, req: LessonProposeRequest = LessonProposeRequest()):
     """Ask Orion for pending lessons from human corrections. Nothing is applied until approved."""
     created = propose_lessons(
-        _orion_db_path(), _lesson_store(), _lesson_llm, min_examples=req.min_examples
+        _orion_db_path(), _lesson_store(), _lesson_llm, min_examples=req.min_examples,
+        organization_id=_organization(request),
     )
     return {"proposed": [c.model_dump() for c in created]}
 
 
 @app.get("/lessons")
-def list_skill_lessons(status: str = Query("pending", pattern="^(pending|approved|rejected|all)$")):
-    candidates = _lesson_store().list(None if status == "all" else status)
+def list_skill_lessons(request: Request, status: str = Query("pending", pattern="^(pending|approved|rejected|all)$")):
+    candidates = _lesson_store().list(None if status == "all" else status, organization_id=_organization(request))
     return {"lessons": [c.model_dump() for c in candidates]}
 
 
 @app.post("/lessons/{candidate_id}/approve")
 def approve_skill_lesson(candidate_id: str, req: LessonReviewRequest, request: Request):
     store = _lesson_store()
-    candidate = store.get(candidate_id)
+    candidate = store.get(candidate_id, organization_id=_organization(request))
     if candidate is None:
         raise HTTPException(status_code=404, detail="lesson not found")
     edited = None
@@ -1663,7 +1683,7 @@ def approve_skill_lesson(candidate_id: str, req: LessonReviewRequest, request: R
 @app.post("/lessons/{candidate_id}/reject")
 def reject_skill_lesson(candidate_id: str, req: LessonReviewRequest, request: Request):
     store = _lesson_store()
-    if store.get(candidate_id) is None:
+    if store.get(candidate_id, organization_id=_organization(request)) is None:
         raise HTTPException(status_code=404, detail="lesson not found")
     if not store.claim(candidate_id, "rejected", _reviewer(request, req.reviewed_by), req.reviewer_note):
         raise HTTPException(status_code=409, detail="lesson already reviewed")
@@ -1671,7 +1691,8 @@ def reject_skill_lesson(candidate_id: str, req: LessonReviewRequest, request: Re
 
 
 @app.get("/orion/export")
-def export_orion_events():
+def export_orion_events(request: Request):
+    organization_id = _organization(request)
     db_path = _orion_db_path()
     if not os.path.exists(db_path):
         raise HTTPException(status_code=404, detail="No event database found")
@@ -1679,7 +1700,8 @@ def export_orion_events():
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM events WHERE quarantined = 0 ORDER BY created_at ASC"
+                "SELECT * FROM events WHERE quarantined = 0 AND organization_id = ? ORDER BY created_at ASC",
+                (organization_id,),
             ).fetchall()
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"DB error: {e}")
@@ -1721,7 +1743,7 @@ def run_orion_training():
                 SELECT task_id, skill_id, agent_id, domain, confidence,
                        human_verified, payload, result, created_at
                 FROM events
-                WHERE quarantined = 0 AND outcome = 'success'
+                WHERE quarantined = 0 AND outcome = 'success' AND organization_id = 'default'
                 ORDER BY created_at ASC
                 """
             ).fetchall()

@@ -100,6 +100,11 @@ _TENANT_RULES: tuple[tuple[str, str], ...] = (
     ("POST", r"/repositories"),
     ("GET", rf"/repositories/{_SEG}"),
     ("POST", r"/github/(pull-request|check-run)"),
+    ("GET", r"/orion/(analytics|export)"),
+    ("GET", r"/scorecards(/.*)?"),
+    ("POST", r"/lessons/propose"),
+    ("GET", r"/lessons"),
+    ("POST", rf"/lessons/{_SEG}/(approve|reject)"),
     # shared platform resources, read-only
     ("GET", r"/agents"),
     ("GET", r"/catalog"),
