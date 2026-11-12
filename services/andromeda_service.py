@@ -41,6 +41,7 @@ from core.security.audit import default_audit_log
 from core.contracts.contracts import FeedbackEvent, OutcomeType
 from core.llm.provider import call_llm, load_provider_config
 from core.nebula.store import SKILL_NAMESPACE_PREFIX
+from orion.storage.schema import ensure_organization_columns
 from core.storage.manage import validate_runtime_database_configuration
 from orion.core.lesson_store import MAX_LESSON_CHARS, LessonStore, normalize as normalize_lesson
 from orion.pipeline.lesson_proposal import propose_lessons
@@ -94,10 +95,18 @@ def _workspace_path_for_container(host_path: str) -> str:
     raise HTTPException(status_code=422, detail=f"workspace folder does not exist: {candidate}")
 
 
+_orion_schema_checked: set[str] = set()
+
+
 def _orion_db_path() -> str:
     orion = getattr(_andromeda, "orion", None)
     config = getattr(orion, "_cfg", None)
-    return getattr(config, "db_path", "orion/data/events.db")
+    path = getattr(config, "db_path", "orion/data/events.db")
+    if path not in _orion_schema_checked:
+        ensure_organization_columns(path)  # the API reads this file directly and can start before Orion
+        if os.path.exists(path):
+            _orion_schema_checked.add(path)
+    return path
 
 
 _andromeda: Andromeda = None

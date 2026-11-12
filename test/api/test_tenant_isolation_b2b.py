@@ -362,3 +362,66 @@ def test_review_decisions_publish_feedback_in_the_items_organization(tenants, mo
     client._andromeda.review_queue.enqueue("rq-1", "code", 0.4, {"spec": "x"}, organization_id="org-a")
     assert client.post("/review/queue/rq-1/approve", headers=a).status_code == 200
     assert published and published[-1]["organization_id"] == "org-a"
+
+
+def test_a_pre_b3_events_database_is_upgraded_by_the_api_readers(tenants, tmp_path, monkeypatch):  # noqa: F811
+    import sqlite3
+
+    client, a, _ = tenants
+    path = str(tmp_path / "old-events.db")
+    with sqlite3.connect(path) as conn:  # an events table exactly as it was before B3
+        conn.execute("""CREATE TABLE events (
+            id TEXT PRIMARY KEY, task_id TEXT NOT NULL, skill_id TEXT NOT NULL, agent_id TEXT NOT NULL,
+            domain TEXT NOT NULL, outcome TEXT NOT NULL, confidence REAL NOT NULL, human_verified INTEGER DEFAULT 0,
+            payload TEXT, result TEXT, human_correction TEXT, latency_ms INTEGER,
+            created_at TEXT DEFAULT (datetime('now')), quarantined INTEGER DEFAULT 0, exported_at TEXT)""")
+        conn.execute("INSERT INTO events (id, task_id, skill_id, agent_id, domain, outcome, confidence) "
+                     "VALUES ('old','t','rigel.skill.code_generation','rigel','code','success',0.9)")
+    monkeypatch.setattr(svc, "_orion_schema_checked", set())
+    client._andromeda.orion = type("O", (), {"_cfg": type("C", (), {"db_path": path})()})()
+    default = _headers_for("old@x.io", "default")
+    assert sum(client.get("/orion/analytics", headers=default).json()["outcome_counts"].values()) == 1
+    assert len([x for x in client.get("/orion/export", headers=default).text.splitlines() if x]) == 1
+    assert client.get("/orion/analytics", headers=a).json()["outcome_counts"] == {}
+
+
+def _headers_for(email, organization):
+    from core.accounts import get_account_store
+
+    store = get_account_store()
+    store.create_user(email, "admin", organization_id=organization)
+    return {"Authorization": "Bearer " + store.create_token(email)[0]}
+
+
+def test_scorecards_name_other_organizations_but_not_the_platform(tmp_path):
+    from core.scorecards.metrics import build_scorecards
+
+    path = _orion_db(tmp_path, [("org-a", None), ("default", None)])
+    assert build_scorecards(path, organization_id="org-a")[0]["subject"]["organization_id"] == "org-a"
+    assert "organization_id" not in build_scorecards(path, organization_id="default")[0]["subject"]
+    assert "organization_id" not in build_scorecards(path, organization_id=None)[0]["subject"]
+
+
+def test_finetune_detection_and_heuristics_ignore_tenant_events(tmp_path):
+    import asyncio
+    import sqlite3
+    from datetime import datetime, timezone
+
+    from orion.core.finetune_detector import FinetuneDetector
+    from orion.pipeline.heuristic_generator import HeuristicGenerator
+
+    path = _orion_db(tmp_path, [("org-a", None)] * 4 + [("default", None)])
+    detector = FinetuneDetector(events_db_path=path, candidate_store=None, redis_url="redis://unused")
+    assert asyncio.run(detector._query_agent_stats())[0][1] == 1  # only the default event is counted
+
+    with sqlite3.connect(path) as conn:
+        for org in ("org-a", "default"):
+            conn.execute(
+                "INSERT INTO feedback_events (id, task_id, task_category, agent_id, outcome, confidence_score, input_hash, "
+                "agent_output, latency_ms, timestamp, organization_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (f"f-{org}", f"t-{org}", "code", "rigel", "completed", 0.9, "h", "{}", 1,
+                 datetime.now(timezone.utc).isoformat(), org))
+    weights = tmp_path / "weights.yaml"
+    weights.write_text("weights: {}\n")
+    generator = HeuristicGenerator(path, str(weights))
+    assert len(generator._query_events("code", window_hours=24)) == 1

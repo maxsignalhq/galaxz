@@ -205,11 +205,13 @@ database.
   `default`-only routes.
 - **Tenant-facing Orion routes** now filter by the principal's organization and are open to every organization:
   `/orion/analytics`, `/orion/export` (your own events), `/scorecards*` (computed from your events and signed with the
-  platform key; the card does not name the organization), and `/lessons*`. `lesson_candidates` has an
+  platform key; a card for another organization names it in `subject.organization_id`, `default` cards are unchanged), and `/lessons*`. `lesson_candidates` has an
   `organization_id`; proposals are built from that organization's corrections only, duplicate checks are per
   organization, and another organization's candidate is a 404. Approving writes the lesson to the approver's Nebula.
 - **Still platform-only (403 for other organizations):** audit, `/config`, `/forge/*`, catalog install,
   `/finetune/*`, `/orion/training/run`, GitHub installation listings. A guard test pins the tenant-scoped route list.
+- A pre-B3 events file is upgraded by a synchronous `ensure_organization_columns` before the API or the fine-tune
+  detector reads it, because they can start before Orion's own `init_db`.
 - The `default` organization's operators can still see tenant task content through the shared Aether stream and
   database files; this is application-layer isolation, not encryption per tenant.
 
