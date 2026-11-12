@@ -43,9 +43,12 @@ the working tree. It is intended to be reviewed before the next GitHub push.
   the repository registry are per organization, and `galaxz admin org-create` / `org-list` / `user-create
   --organization` make a second organization possible. A repository belongs to one organization; GitHub pull-request
   and check-run calls need the repository registered to the caller's organization, and installation listings are
-  `default`-only. Routes that are not tenant-scoped (audit, config, forge, Orion, fine-tune, lessons, scorecards) return 403 to
-  other organizations until phase B3. `secret put --organization` added. **Behaviour change:** the artifact routes no longer read `organization_id` from the query string or
+  `default`-only. Routes that are not tenant-scoped return 403 to other organizations. `secret put --organization` added. **Behaviour change:** the artifact routes no longer read `organization_id` from the query string or
   body; it comes from the authenticated principal.
+- Tenant scoping (accounts phase B3): feedback events carry `organization_id`; Orion analytics, export, scorecards
+  and skill lessons are per organization and open to every organization. Tenant events are excluded from curation,
+  fine-tune detection, heuristics and training runs, so they never feed shared models. Audit, config, forge,
+  catalog install and fine-tune routes remain `default`-only.
 - Secret references: `${{ secrets.<id> }}` in a `quasar.*` tool payload is resolved
   only while the tool runs (scoped to organization, repository and skill) and
   redacted from results and errors, so plaintext never reaches the goal, job,

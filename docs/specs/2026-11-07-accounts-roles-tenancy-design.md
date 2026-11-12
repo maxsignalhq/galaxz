@@ -1,6 +1,6 @@
 # Accounts, roles and multi-tenancy — design
 
-Date: 2026-11-07. Depends on: audit logging. Status: drafted at the maintainer's request; **phase A implemented** (phase B1 and B2 implemented, B3 and C not).
+Date: 2026-11-07. Depends on: audit logging. Status: drafted at the maintainer's request; **phase A implemented** (phase B1, B2 and B3 implemented, C not).
 
 ## Problem
 Auth is one shared `GALAXZ_API_KEY`. Everyone who has it is an administrator, and the identity
@@ -180,10 +180,6 @@ database.
   `default` (the audit chain, `/config`, `/forge/*`, `/catalog/*/install`, `/orion/*`, `/finetune/*`, `/lessons*`,
   `/scorecards*`, `/github/installations*`). A new route therefore fails closed until it is scoped and listed;
   a guard test pins the list. Shared read-only views (`/agents`, `/catalog`, `/quasar`, `/wormhole`) stay open.
-  Consequence: organization admins cannot run lessons, fine-tune review or scorecards until B3.
-- **Orion ingestion is still platform-wide.** Task feedback from every organization is ingested into Orion's
-  unscoped events, readable only through the `default`-only `/orion/*` routes. Treat the `default` organization
-  as the platform operator until B3.
 - **Repository identity is case-insensitive** (GitHub names are), and the ownership check and insert happen under
   one lock. Claims are first come, first served: with a shared installation, any admin who can
   `POST /repositories` can claim a repository the installation reaches, and once claimed the `default`
@@ -196,6 +192,26 @@ database.
   This is the first point at which a second organization can exist.
 - Not scoped on purpose: evidence ids in `POST /github/pull-request` (`goal_id`, `task_ids`) are only echoed
   into the PR body.
+
+### B3 as built (Orion)
+
+- **Events carry an organization.** `RefineryFeedbackEvent` and `FeedbackEvent` gain `organization_id` (default
+  `default`). Andromeda's review decisions and task feedback stamp the item's or caller's organization; Rigel and
+  Vega take it from the task context the orchestrator now passes. Orion's `events` and `feedback_events` tables add
+  the column on open (existing rows land in `default`; SQLite only, Orion has no Alembic schema).
+- **Tenant data never trains shared models.** Everything platform-wide reads `default` events only: curation
+  (`get_uncurated_events`), fine-tune detection and export counts, heuristic windows (`get_window`, `list_domains`,
+  `get_by_agent`) and `POST /orion/training/run`. `/finetune/candidates*` and `/orion/training/run` therefore stay
+  `default`-only routes.
+- **Tenant-facing Orion routes** now filter by the principal's organization and are open to every organization:
+  `/orion/analytics`, `/orion/export` (your own events), `/scorecards*` (computed from your events and signed with the
+  platform key; the card does not name the organization), and `/lessons*`. `lesson_candidates` has an
+  `organization_id`; proposals are built from that organization's corrections only, duplicate checks are per
+  organization, and another organization's candidate is a 404. Approving writes the lesson to the approver's Nebula.
+- **Still platform-only (403 for other organizations):** audit, `/config`, `/forge/*`, catalog install,
+  `/finetune/*`, `/orion/training/run`, GitHub installation listings. A guard test pins the tenant-scoped route list.
+- The `default` organization's operators can still see tenant task content through the shared Aether stream and
+  database files; this is application-layer isolation, not encryption per tenant.
 
 ### Risks to review
 
@@ -240,7 +256,7 @@ exact permission names.
   PostgreSQL 16.
 
 ## Not yet done
-- Phase B3 (Orion stores: fine-tune candidates, lessons, scorecards) and C (quotas).
+- Phase C (quotas).
 - Prism has no login: it authenticates with the deployment's `GALAXZ_API_KEY`, so all its users act as that
   key's administrator. The OIDC spec is what fixes this.
 - Rate limiting on failed token attempts.

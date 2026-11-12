@@ -66,16 +66,18 @@ def build_scorecards(
     issuer: str = "galaxz",
     skill_id: str | None = None,
     now: datetime | None = None,
+    organization_id: str | None,
 ) -> list[dict]:
+    """Scorecards over one organization's events (``None`` = every organization, platform internals only)."""
     if not os.path.exists(db_path):
         return []
     now = now or datetime.now(timezone.utc)
     cutoff = (now - timedelta(days=days)).astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     query = (
         "SELECT agent_id, skill_id, outcome, confidence, human_verified, latency_ms FROM events "
-        "WHERE quarantined = 0 AND created_at >= ?"
+        "WHERE quarantined = 0 AND created_at >= ? AND (? IS NULL OR organization_id = ?)"
     )
-    params: list = [cutoff]
+    params: list = [cutoff, organization_id, organization_id]
     if skill_id is not None:
         query += " AND skill_id = ?"
         params.append(skill_id)

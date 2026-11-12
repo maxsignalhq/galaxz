@@ -177,6 +177,7 @@ class VegaAgent:
                     raw_requirements=raw_requirements,
                     config_path=context.get("config_path", self.config_path),
                     source_type=payload.get("source_type", "plain"),
+                    organization_id=context.get("organization_id") or "default",
                 )
             except LLMQuotaError:
                 raise
@@ -214,6 +215,7 @@ class VegaAgent:
                 test_results=payload.get("test_results"),
                 config_path=context.get("config_path", self.config_path),
                 source_type=payload.get("source_type", "plain"),
+                organization_id=context.get("organization_id") or "default",
             )
             return {
                 "result": result["bug_reporter"] or {"bug_reports": [], "total_bugs": 0},

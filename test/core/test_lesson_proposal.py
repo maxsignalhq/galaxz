@@ -98,7 +98,7 @@ def test_proposes_pending_candidates_with_evidence(tmp_path, store):
     assert [c.content for c in created] == ["Prefer fromisoformat.", "Always handle timezones."]
     assert all(c.status == "pending" and c.skill_id == SKILL and c.agent_id == "rigel" for c in created)
     assert created[0].evidence == ["e0", "e1", "e2", "e3"]
-    assert [c.candidate_id for c in store.list()] == [c.candidate_id for c in created]
+    assert [c.candidate_id for c in store.list(organization_id=None)] == [c.candidate_id for c in created]
     assert len(llm.calls) == 1
 
 
@@ -168,7 +168,7 @@ def test_two_groups_get_separate_proposals(tmp_path, store):
 def test_llm_failure_leaves_events_unused_for_a_retry(tmp_path, store, reply):
     path = make_events(tmp_path, rows(3))
     assert propose_lessons(path, store, FakeLLM(reply)) == []
-    assert store.used_event_ids() == set() and store.list() == []
+    assert store.used_event_ids() == set() and store.list(organization_id=None) == []
     retry = propose_lessons(path, store, FakeLLM())
     assert len(retry) == 1
 

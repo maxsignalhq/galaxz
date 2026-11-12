@@ -170,7 +170,7 @@ def _events_db(tmp_path, rows):
 
 
 def test_missing_database_has_no_scorecards(tmp_path):
-    assert build_scorecards(str(tmp_path / "nope.db"), now=NOW) == []
+    assert build_scorecards(str(tmp_path / "nope.db"), now=NOW, organization_id=None) == []
 
 
 def test_scorecard_metrics(tmp_path):
@@ -179,7 +179,7 @@ def test_scorecard_metrics(tmp_path):
         + [{"outcome": "fail", "confidence": 0.1, "latency": 500}] * 4
         + [{"outcome": "partial", "confidence": 0.5, "latency": 300}] * 4
     )
-    [card] = build_scorecards(_events_db(tmp_path, rows), issuer="acme", now=NOW)
+    [card] = build_scorecards(_events_db(tmp_path, rows), issuer="acme", now=NOW, organization_id=None)
     assert card["version"] == "1.0" and card["issuer"] == "acme"
     assert card["subject"] == {"agent_id": "rigel", "skill_id": "rigel.skill.code_generation"}
     assert card["issued_at"] == "2026-10-05T12:00:00Z"
@@ -197,7 +197,7 @@ def test_scorecard_metrics(tmp_path):
 
 
 def test_small_samples_are_flagged_insufficient(tmp_path):
-    [card] = build_scorecards(_events_db(tmp_path, [{}, {}, {}]), now=NOW)
+    [card] = build_scorecards(_events_db(tmp_path, [{}, {}, {}]), now=NOW, organization_id=None)
     assert card["metrics"]["tasks"] == 3 and card["metrics"]["success_rate"] == 1.0
     assert card["sample"]["sufficient"] is False
     assert card["metrics"]["success_rate_ci95"][0] < 0.5
@@ -209,15 +209,15 @@ def test_quarantined_events_and_old_events_are_excluded(tmp_path):
         {"created": "2026-08-01 00:00:00", "outcome": "fail"},
         {"outcome": "success"},
     ]
-    [card] = build_scorecards(_events_db(tmp_path, rows), now=NOW)
+    [card] = build_scorecards(_events_db(tmp_path, rows), now=NOW, organization_id=None)
     assert card["metrics"]["tasks"] == 1 and card["metrics"]["success_rate"] == 1.0
 
 
 def test_window_days_changes_what_is_counted(tmp_path):
     path = _events_db(tmp_path, [{"created": "2026-09-20 00:00:00"}, {"created": "2026-10-04 00:00:00"}])
-    assert build_scorecards(path, days=30, now=NOW)[0]["metrics"]["tasks"] == 2
-    assert build_scorecards(path, days=7, now=NOW)[0]["metrics"]["tasks"] == 1
-    assert build_scorecards(path, days=1, now=NOW) == []
+    assert build_scorecards(path, days=30, now=NOW, organization_id=None)[0]["metrics"]["tasks"] == 2
+    assert build_scorecards(path, days=7, now=NOW, organization_id=None)[0]["metrics"]["tasks"] == 1
+    assert build_scorecards(path, days=1, now=NOW, organization_id=None) == []
 
 
 def test_scorecards_are_grouped_by_skill_and_agent_and_filterable(tmp_path):
@@ -227,21 +227,21 @@ def test_scorecards_are_grouped_by_skill_and_agent_and_filterable(tmp_path):
         {"skill": "a.skill", "agent": "a2"},
     ]
     path = _events_db(tmp_path, rows)
-    cards = build_scorecards(path, now=NOW)
+    cards = build_scorecards(path, now=NOW, organization_id=None)
     assert [(c["subject"]["skill_id"], c["subject"]["agent_id"]) for c in cards] == [
         ("a.skill", "a"),
         ("a.skill", "a2"),
         ("b.skill", "b"),
     ]
-    only = build_scorecards(path, skill_id="b.skill", now=NOW)
+    only = build_scorecards(path, skill_id="b.skill", now=NOW, organization_id=None)
     assert [c["subject"]["agent_id"] for c in only] == ["b"]
 
 
 def test_null_latency_does_not_break_percentiles(tmp_path):
-    [card] = build_scorecards(_events_db(tmp_path, [{"latency": None}, {"latency": 40}]), now=NOW)
+    [card] = build_scorecards(_events_db(tmp_path, [{"latency": None}, {"latency": 40}]), now=NOW, organization_id=None)
     assert card["metrics"]["latency_ms_p50"] == 40
 
 
 def test_all_null_latencies_give_null_percentiles(tmp_path):
-    [card] = build_scorecards(_events_db(tmp_path, [{"latency": None}]), now=NOW)
+    [card] = build_scorecards(_events_db(tmp_path, [{"latency": None}]), now=NOW, organization_id=None)
     assert card["metrics"]["latency_ms_p50"] is None and card["metrics"]["latency_ms_p95"] is None

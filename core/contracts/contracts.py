@@ -88,6 +88,7 @@ class RefineryFeedbackEvent(BaseModel):
     human_verified: bool = False
     human_correction: str | None = None
     latency_ms: int = Field(ge=0)
+    organization_id: str = "default"
     timestamp: datetime = Field(default_factory=utc_now)
 
     @field_validator("agent_id", "skill")
@@ -137,6 +138,7 @@ class FeedbackEvent(BaseModel):
     human_correction: dict | None = None
     human_verified: bool = False
     latency_ms: int = Field(ge=0)
+    organization_id: str = "default"
     timestamp: datetime = Field(default_factory=utc_now)
 
 

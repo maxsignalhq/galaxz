@@ -366,7 +366,7 @@ class Andromeda:
         agent_id = state.get("assigned_agent", "")
         skill_id = state["required_skills"][0]
         payload = state.get("payload", {})
-        context = {**state.get("context", {}), "task_id": state["task_id"]}
+        context = {**state.get("context", {}), "task_id": state["task_id"], "organization_id": state.get("organization_id") or "default"}
 
         # Secret references are swapped for values only here, for the duration of the call;
         # state, task log, policy digest and review queue keep the reference.
