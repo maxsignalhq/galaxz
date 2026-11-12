@@ -71,7 +71,7 @@ def _make_policy_node(policy: PolicyEngine, grants: GrantStore):
                 held.append((skill, decision))
         for skill, decision in held:
             digest = payload_digest(origin, skill, payload)
-            if grants.consume(origin=origin or "", skill=skill, digest=digest):
+            if grants.consume(origin=origin or "", skill=skill, digest=digest, organization_id=state.get("organization_id") or "default"):
                 logger.info("[policy] grant consumed skill=%s origin=%s", skill, origin)
                 continue
             logger.warning("[policy] held for review skill=%s origin=%s rule=%s", skill, origin, decision.rule_index)
@@ -493,8 +493,8 @@ class Andromeda:
             context = {**(context or {}), **context_update}
 
         query = " ".join(v for v in task.payload.values() if isinstance(v, str))
-        memories = self.nebula.recall([task.origin, "global"], query=query, limit=5) if query else []
-        lessons = self.nebula.list(f"{SKILL_NAMESPACE_PREFIX}{task.skill}", limit=MAX_SKILL_LESSONS)
+        memories = self.nebula.recall([task.origin, "global"], query=query, limit=5, organization_id=task.organization_id) if query else []
+        lessons = self.nebula.list(f"{SKILL_NAMESPACE_PREFIX}{task.skill}", limit=MAX_SKILL_LESSONS, organization_id=task.organization_id)
         if lessons:
             seen = {m.memory_id for m in memories}
             memories = memories + [lesson for lesson in lessons if lesson.memory_id not in seen]
@@ -549,6 +549,7 @@ class Andromeda:
                 task_id=str(task.task_id),
                 skill=task.skill,
                 attempt_id=str(task.execution_attempt_id) if task.execution_attempt_id else None,
+                organization_id=task.organization_id,
             )
         if validated_state.status == "escalated":
             sla_deadline = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()

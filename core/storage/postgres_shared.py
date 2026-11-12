@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from core.artifacts.object_storage import ArtifactAccessPolicy, ObjectStorage
+from core.artifacts.store import identity_key
 
 
 def _engine(url: str, engine: Engine | None) -> Engine:
@@ -132,10 +133,11 @@ class PostgresArtifactStore:
 
     def record(self, artifacts, workspace_root, task_id, skill, attempt_id=None, project_id=None, organization_id=None):
         results = []
+        organization_id = organization_id or "default"
         with self.engine.begin() as c:
             for artifact in artifacts:
                 filename, content = artifact["filename"], artifact["content"]
-                key, digest = f"{workspace_root}::{filename}", hashlib.sha256(content.encode()).hexdigest()
+                key, digest = identity_key(workspace_root, filename, organization_id), hashlib.sha256(content.encode()).hexdigest()
                 attempt_key = f"{attempt_id}::{key}" if attempt_id else None
                 row = c.execute(text("SELECT identity_key,version FROM artifact_versions WHERE attempt_artifact_key=:attempt"), {"attempt": attempt_key}).mappings().first() if attempt_key else None
                 if row:
@@ -158,30 +160,30 @@ class PostgresArtifactStore:
                 results.append({"identity_key": key, "version": version, "recorded": recorded})
         return results
 
-    def list_files(self):
+    def list_files(self, *, organization_id):
         with self.engine.connect() as c:
-            rows = c.execute(text("SELECT DISTINCT ON (identity_key) identity_key,filename,version AS latest_version,created_at AS updated_at,task_id FROM artifact_versions ORDER BY identity_key,version DESC")).mappings().all()
+            rows = c.execute(text("SELECT DISTINCT ON (identity_key) identity_key,filename,version AS latest_version,created_at AS updated_at,task_id FROM artifact_versions WHERE (CAST(:org AS TEXT) IS NULL OR organization_id=:org) ORDER BY identity_key,version DESC"), {"org": organization_id}).mappings().all()
         return [dict(row) for row in rows]
 
-    def history(self, key):
+    def history(self, key, *, organization_id=None):
         with self.engine.connect() as c:
-            return [dict(row) for row in c.execute(text("SELECT version,task_id,skill,created_at,content_hash FROM artifact_versions WHERE identity_key=:key ORDER BY version DESC"), {"key": key}).mappings()]
+            return [dict(row) for row in c.execute(text("SELECT version,task_id,skill,created_at,content_hash FROM artifact_versions WHERE identity_key=:key AND (CAST(:org AS TEXT) IS NULL OR organization_id=:org) ORDER BY version DESC"), {"key": key, "org": organization_id}).mappings()]
 
     def get_version(self, key, version, *, project_id=None, organization_id=None):
         with self.engine.connect() as c:
-            row = c.execute(text("SELECT * FROM artifact_versions WHERE identity_key=:key AND version=:version"), {"key": key, "version": version}).mappings().first()
+            row = c.execute(text("SELECT * FROM artifact_versions WHERE identity_key=:key AND version=:version AND (CAST(:org AS TEXT) IS NULL OR organization_id=:org)"), {"key": key, "version": version, "org": organization_id}).mappings().first()
         result = dict(row) if row else None
         if result and self.object_storage and result.get("object_id"):
-            ArtifactAccessPolicy().authorize(artifact_project_id=result.get("project_id"), artifact_organization_id=result.get("organization_id"), project_id=project_id, organization_id=organization_id)
+            ArtifactAccessPolicy().authorize(artifact_project_id=result.get("project_id"), artifact_organization_id=result.get("organization_id"), project_id=project_id, organization_id=organization_id if organization_id is not None else result.get("organization_id"))
             result["content"] = self.object_storage.get(result["object_id"]).decode()
         return result
 
-    def latest_version_number(self, key):
+    def latest_version_number(self, key, *, organization_id=None):
         with self.engine.connect() as c:
-            return c.execute(text("SELECT MAX(version) FROM artifact_versions WHERE identity_key=:key"), {"key": key}).scalar_one_or_none()
+            return c.execute(text("SELECT MAX(version) FROM artifact_versions WHERE identity_key=:key AND (CAST(:org AS TEXT) IS NULL OR organization_id=:org)"), {"key": key, "org": organization_id}).scalar_one_or_none()
 
-    def diff(self, key, from_version, to_version):
-        before, after = self.get_version(key, from_version), self.get_version(key, to_version)
+    def diff(self, key, from_version, to_version, *, organization_id=None):
+        before, after = self.get_version(key, from_version, organization_id=organization_id), self.get_version(key, to_version, organization_id=organization_id)
         if before is None or after is None:
             raise KeyError(key)
         return "".join(difflib.unified_diff(before["content"].splitlines(True), after["content"].splitlines(True), fromfile=f"{key}@v{from_version}", tofile=f"{key}@v{to_version}"))

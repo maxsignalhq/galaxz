@@ -277,3 +277,24 @@ def test_postgres_task_log_and_review_queue_are_scoped_by_organization(database)
     assert [i["task_id"] for i in queue.get_pending(organization_id="default")] == ["q-b"]
     assert queue.get_stats(organization_id="org-a")["pending"] == 1
     assert len(queue.get_pending(organization_id=None)) == 2
+
+
+def test_postgres_artifacts_are_scoped_by_organization_and_legacy_rows_backfilled(database):
+    migrate(database, "0008_review_task_scope")
+    with database.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO artifact_versions (identity_key, version, content, content_hash, filename, task_id, skill, created_at) "
+            "VALUES ('::old.py', 1, 'x', 'h', 'old.py', 't', 's', 'now')")
+    migrate(database)
+    store = PostgresArtifactStore(database.url.render_as_string(hide_password=False), engine=database)
+    store.record([{"filename": "a.py", "content": "mine"}], "", "t", "s", organization_id="org-a")
+    key = "org:org-a::::a.py"
+    assert store.history(key, organization_id="org-a")[0]["version"] == 1
+    assert store.history(key, organization_id="org-b") == []
+    assert store.get_version(key, 1, organization_id="org-b") is None
+    assert store.latest_version_number(key, organization_id="org-b") is None
+    assert [f["filename"] for f in store.list_files(organization_id="org-a")] == ["a.py"]
+    assert [f["filename"] for f in store.list_files(organization_id="default")] == ["old.py"]
+    assert len(store.list_files(organization_id=None)) == 2
+    with database.connect() as connection:
+        assert connection.exec_driver_sql("SELECT organization_id FROM artifact_versions WHERE identity_key='::old.py'").scalar() == "default"

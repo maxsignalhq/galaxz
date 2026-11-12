@@ -106,7 +106,7 @@ def test_propose_creates_pending_lessons_and_touches_no_memory(env):
     proposed = propose(env)
     assert [p["content"] for p in proposed] == ["Prefer datetime.fromisoformat for ISO dates."]
     assert proposed[0]["status"] == "pending" and proposed[0]["skill_id"] == SKILL
-    assert env.nebula.namespaces() == []  # human gate: nothing applied yet
+    assert env.nebula.namespaces(organization_id=None) == []  # human gate: nothing applied yet
     listed = env.client.get("/lessons", headers=AUTH).json()["lessons"]
     assert [c["candidate_id"] for c in listed] == [proposed[0]["candidate_id"]]
 
@@ -134,7 +134,7 @@ def test_approve_writes_one_skill_memory(env):
     candidate = propose(env)[0]
     r = env.client.post(f"/lessons/{candidate['candidate_id']}/approve", json={**REVIEWER, "reviewer_note": "good"}, headers=AUTH)
     assert r.status_code == 200 and r.json()["status"] == "approved"
-    [entry] = env.nebula.list(f"skill:{SKILL}")
+    [entry] = env.nebula.list(f"skill:{SKILL}", organization_id=None)
     assert entry.content == "Prefer datetime.fromisoformat for ISO dates."
     assert entry.tags == ["lesson", "agent:rigel"]
     assert str(entry.memory_id) == r.json()["memory_id"]
@@ -149,7 +149,7 @@ def test_approve_with_edited_content(env):
         f"/lessons/{candidate['candidate_id']}/approve", json={**REVIEWER, "content": "  Edited   by a human. "}, headers=AUTH
     )
     assert r.status_code == 200
-    assert [e.content for e in env.nebula.list(f"skill:{SKILL}")] == ["Edited by a human."]
+    assert [e.content for e in env.nebula.list(f"skill:{SKILL}", organization_id=None)] == ["Edited by a human."]
 
 
 @pytest.mark.parametrize("content", ["", "   ", "x" * 301])
@@ -158,7 +158,7 @@ def test_approve_rejects_bad_edited_content_without_claiming(env, content):
     r = env.client.post(f"/lessons/{candidate['candidate_id']}/approve", json={**REVIEWER, "content": content}, headers=AUTH)
     assert r.status_code == 422
     assert len(env.client.get("/lessons", headers=AUTH).json()["lessons"]) == 1
-    assert env.nebula.namespaces() == []
+    assert env.nebula.namespaces(organization_id=None) == []
 
 
 def test_double_approval_and_cross_decisions_conflict(env):
@@ -166,14 +166,14 @@ def test_double_approval_and_cross_decisions_conflict(env):
     assert env.client.post(f"/lessons/{cid}/approve", json=REVIEWER, headers=AUTH).status_code == 200
     assert env.client.post(f"/lessons/{cid}/approve", json=REVIEWER, headers=AUTH).status_code == 409
     assert env.client.post(f"/lessons/{cid}/reject", json=REVIEWER, headers=AUTH).status_code == 409
-    assert len(env.nebula.list(f"skill:{SKILL}")) == 1
+    assert len(env.nebula.list(f"skill:{SKILL}", organization_id=None)) == 1
 
 
 def test_reject_stores_nothing(env):
     cid = propose(env)[0]["candidate_id"]
     r = env.client.post(f"/lessons/{cid}/reject", json={**REVIEWER, "reviewer_note": "wrong"}, headers=AUTH)
     assert r.status_code == 200 and r.json()["status"] == "rejected"
-    assert env.nebula.namespaces() == []
+    assert env.nebula.namespaces(organization_id=None) == []
     assert env.client.post(f"/lessons/{cid}/approve", json=REVIEWER, headers=AUTH).status_code == 409
 
 

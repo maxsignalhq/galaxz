@@ -78,7 +78,7 @@ def test_list_files_returns_latest_version_per_identity_key(store):
     store.record([{"filename": "a.py", "content": "2"}], workspace_root="/w", task_id="t2", skill="s")
     store.record([{"filename": "b.py", "content": "1"}], workspace_root="/w", task_id="t3", skill="s")
 
-    files = {f["identity_key"]: f for f in store.list_files()}
+    files = {f["identity_key"]: f for f in store.list_files(organization_id=None)}
     assert files["/w::a.py"]["latest_version"] == 2
     assert files["/w::a.py"]["task_id"] == "t2"
     assert files["/w::b.py"]["latest_version"] == 1

@@ -12,6 +12,7 @@ DEFAULT_TTL_S = 3600
 _CREATE = """
 CREATE TABLE IF NOT EXISTS policy_grants (
     grant_id    TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
     origin      TEXT NOT NULL,
     skill       TEXT NOT NULL,
     digest      TEXT NOT NULL,
@@ -44,6 +45,9 @@ class GrantStore:
                 os.makedirs(dirname, exist_ok=True)
             self._conn = sqlite3.connect(path, check_same_thread=False)
             self._conn.execute(_CREATE)
+            columns = {row[1] for row in self._conn.execute("PRAGMA table_info(policy_grants)")}
+            if "organization_id" not in columns:
+                self._conn.execute("ALTER TABLE policy_grants ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default'")
             self._conn.execute(_INDEX)
             self._conn.commit()
         return self._conn
@@ -56,20 +60,21 @@ class GrantStore:
         digest: str,
         ttl_s: int = DEFAULT_TTL_S,
         granted_by: str | None = None,
+        organization_id: str = "default",
     ) -> str:
         grant_id = str(uuid.uuid4())
         now = _now()
         with self._lock:
             conn = self._connection()
             conn.execute(
-                "INSERT INTO policy_grants(grant_id, origin, skill, digest, granted_by, created_at, expires_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (grant_id, origin, skill, digest, granted_by, now.isoformat(), (now + timedelta(seconds=ttl_s)).isoformat()),
+                "INSERT INTO policy_grants(grant_id, organization_id, origin, skill, digest, granted_by, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (grant_id, organization_id, origin, skill, digest, granted_by, now.isoformat(), (now + timedelta(seconds=ttl_s)).isoformat()),
             )
             conn.commit()
         return grant_id
 
-    def consume(self, *, origin: str, skill: str, digest: str) -> bool:
+    def consume(self, *, origin: str, skill: str, digest: str, organization_id: str = "default") -> bool:
         """Atomically use one unexpired grant; False when there is none."""
         now = _now().isoformat()
         with self._lock:
@@ -77,9 +82,9 @@ class GrantStore:
             cur = conn.execute(
                 "UPDATE policy_grants SET consumed_at = ? WHERE grant_id = ("
                 "  SELECT grant_id FROM policy_grants "
-                "  WHERE origin = ? AND skill = ? AND digest = ? AND consumed_at IS NULL AND expires_at > ? "
+                "  WHERE organization_id = ? AND origin = ? AND skill = ? AND digest = ? AND consumed_at IS NULL AND expires_at > ? "
                 "  ORDER BY created_at LIMIT 1)",
-                (now, origin, skill, digest, now),
+                (now, organization_id, origin, skill, digest, now),
             )
             conn.commit()
         return cur.rowcount > 0

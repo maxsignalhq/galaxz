@@ -10,8 +10,10 @@ from datetime import datetime, timezone
 from core.artifacts.object_storage import ArtifactAccessPolicy, ObjectStorage
 
 
-def identity_key(workspace_root: str, filename: str) -> str:
-    return f"{workspace_root}::{filename}"
+def identity_key(workspace_root: str, filename: str, organization_id: str = "default") -> str:
+    """Artifact identity. Other organizations get their own namespace so equal paths never share history."""
+    base = f"{workspace_root}::{filename}"
+    return base if organization_id == "default" else f"org:{organization_id}::{base}"
 
 
 _CREATE_TABLE = """
@@ -54,6 +56,7 @@ class ArtifactStore:
         ):
             if column not in columns:
                 self._conn.execute(f"ALTER TABLE artifact_versions ADD COLUMN {column} {definition}")
+        self._conn.execute("UPDATE artifact_versions SET organization_id = 'default' WHERE organization_id IS NULL")
         self._conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS artifact_attempt_identity "
             "ON artifact_versions(attempt_artifact_key) WHERE attempt_artifact_key IS NOT NULL"
@@ -79,6 +82,7 @@ class ArtifactStore:
         project_id: str | None = None,
         organization_id: str | None = None,
     ) -> list[dict]:
+        organization_id = organization_id or "default"
         results = []
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._conn:
@@ -86,7 +90,7 @@ class ArtifactStore:
             for artifact in artifacts:
                 filename = artifact["filename"]
                 content = artifact["content"]
-                key = identity_key(workspace_root, filename)
+                key = identity_key(workspace_root, filename, organization_id)
                 content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
                 attempt_key = f"{attempt_id}::{key}" if attempt_id else None
 
@@ -166,11 +170,14 @@ class ArtifactStore:
                 results.append({"identity_key": key, "version": next_version, "recorded": True})
         return results
 
-    def list_files(self) -> list[dict]:
+    def list_files(self, *, organization_id: str | None) -> list[dict]:
+        """One organization's files (``None`` = every organization, platform internals only)."""
         with self._lock:
             cur = self._conn.execute(
                 "SELECT identity_key, filename, version, task_id, created_at "
-                "FROM artifact_versions ORDER BY identity_key, version DESC"
+                "FROM artifact_versions WHERE (? IS NULL OR organization_id = ?) "
+                "ORDER BY identity_key, version DESC",
+                (organization_id, organization_id),
             )
             latest: dict[str, dict] = {}
             for row in cur.fetchall():
@@ -186,20 +193,22 @@ class ArtifactStore:
                 }
             return list(latest.values())
 
-    def history(self, identity_key_value: str) -> list[dict]:
+    def history(self, identity_key_value: str, *, organization_id: str | None = None) -> list[dict]:
         with self._lock:
             cur = self._conn.execute(
                 "SELECT version, task_id, skill, created_at, content_hash "
-                "FROM artifact_versions WHERE identity_key = ? ORDER BY version DESC",
-                (identity_key_value,),
+                "FROM artifact_versions WHERE identity_key = ? AND (? IS NULL OR organization_id = ?) "
+                "ORDER BY version DESC",
+                (identity_key_value, organization_id, organization_id),
             )
             return [dict(row) for row in cur.fetchall()]
 
     def get_version(self, identity_key_value: str, version: int, *, project_id: str | None = None, organization_id: str | None = None) -> dict | None:
         with self._lock:
             cur = self._conn.execute(
-                "SELECT * FROM artifact_versions WHERE identity_key = ? AND version = ?",
-                (identity_key_value, version),
+                "SELECT * FROM artifact_versions WHERE identity_key = ? AND version = ? "
+                "AND (? IS NULL OR organization_id = ?)",
+                (identity_key_value, version, organization_id, organization_id),
             )
             row = cur.fetchone()
             result = dict(row) if row is not None else None
@@ -208,16 +217,17 @@ class ArtifactStore:
                 artifact_project_id=result.get("project_id"),
                 artifact_organization_id=result.get("organization_id"),
                 project_id=project_id,
-                organization_id=organization_id,
+                organization_id=organization_id if organization_id is not None else result.get("organization_id"),
             )
             result["content"] = self.object_storage.get(result["object_id"]).decode("utf-8")
         return result
 
-    def latest_version_number(self, identity_key_value: str) -> int | None:
+    def latest_version_number(self, identity_key_value: str, *, organization_id: str | None = None) -> int | None:
         with self._lock:
             cur = self._conn.execute(
-                "SELECT MAX(version) AS v FROM artifact_versions WHERE identity_key = ?",
-                (identity_key_value,),
+                "SELECT MAX(version) AS v FROM artifact_versions WHERE identity_key = ? "
+                "AND (? IS NULL OR organization_id = ?)",
+                (identity_key_value, organization_id, organization_id),
             )
             value = cur.fetchone()["v"]
             return value
@@ -254,9 +264,9 @@ class ArtifactStore:
                     deleted.append(object_id)
         return deleted
 
-    def diff(self, identity_key_value: str, from_version: int, to_version: int) -> str:
-        from_row = self.get_version(identity_key_value, from_version)
-        to_row = self.get_version(identity_key_value, to_version)
+    def diff(self, identity_key_value: str, from_version: int, to_version: int, *, organization_id: str | None = None) -> str:
+        from_row = self.get_version(identity_key_value, from_version, organization_id=organization_id)
+        to_row = self.get_version(identity_key_value, to_version, organization_id=organization_id)
         if from_row is None or to_row is None:
             raise KeyError(f"version not found for {identity_key_value}: {from_version} or {to_version}")
 

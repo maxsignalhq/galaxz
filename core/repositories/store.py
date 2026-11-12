@@ -26,6 +26,7 @@ class RepositoryRecord:
     local_path: str | None
     active: bool
     created_at: str
+    organization_id: str = "default"
 
 
 class RepositoryStore:
@@ -39,7 +40,22 @@ class RepositoryStore:
             repository_id TEXT PRIMARY KEY, provider TEXT NOT NULL, owner TEXT NOT NULL,
             name TEXT NOT NULL, installation_scope TEXT NOT NULL, local_path TEXT,
             active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL,
-            UNIQUE(provider, owner, name, installation_scope))""")
+            organization_id TEXT NOT NULL DEFAULT 'default',
+            UNIQUE(organization_id, provider, owner, name, installation_scope))""")
+        if "organization_id" not in {row[1] for row in self._conn.execute("PRAGMA table_info(repositories)")}:
+            # Pre-tenancy table: its UNIQUE key cannot gain a column in place, so rebuild it.
+            self._conn.execute("ALTER TABLE repositories RENAME TO repositories_v1")
+            self._conn.execute("""CREATE TABLE repositories (
+                repository_id TEXT PRIMARY KEY, provider TEXT NOT NULL, owner TEXT NOT NULL,
+                name TEXT NOT NULL, installation_scope TEXT NOT NULL, local_path TEXT,
+                active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL,
+                organization_id TEXT NOT NULL DEFAULT 'default',
+                UNIQUE(organization_id, provider, owner, name, installation_scope))""")
+            self._conn.execute("""INSERT INTO repositories
+                (repository_id,provider,owner,name,installation_scope,local_path,active,created_at)
+                SELECT repository_id,provider,owner,name,installation_scope,local_path,active,created_at
+                FROM repositories_v1""")
+            self._conn.execute("DROP TABLE repositories_v1")
         self._conn.execute("""CREATE TABLE IF NOT EXISTS repository_revisions (
             repository_id TEXT NOT NULL, requested_revision TEXT NOT NULL,
             commit_sha TEXT NOT NULL, resolved_at TEXT NOT NULL,
@@ -47,35 +63,47 @@ class RepositoryStore:
             FOREIGN KEY(repository_id) REFERENCES repositories(repository_id))""")
         self._conn.commit()
 
-    def register(self, *, provider: str, owner: str, name: str, installation_scope: str, local_path: str | None = None) -> RepositoryRecord:
+    def register(self, *, provider: str, owner: str, name: str, installation_scope: str, local_path: str | None = None, organization_id: str = "default") -> RepositoryRecord:
         values = [value.strip() for value in (provider, owner, name, installation_scope)]
         if not all(values):
             raise ValueError("provider, owner, name and installation_scope are required")
         if local_path is not None and not Path(local_path).is_dir():
             raise RepositoryAccessError("repository path does not exist or is not a directory")
         now = datetime.now(timezone.utc).isoformat()
+        holder = self.holder(provider.strip(), owner.strip(), name.strip())
+        if holder is not None and holder != organization_id:
+            raise ValueError("repository is registered to another organization")
         with self._lock:
             self._conn.execute("""INSERT INTO repositories
-                (repository_id,provider,owner,name,installation_scope,local_path,created_at)
-                VALUES (?,?,?,?,?,?,?)
-                ON CONFLICT(provider,owner,name,installation_scope) DO UPDATE SET
-                local_path=excluded.local_path, active=1""", (str(uuid4()), *values, local_path, now))
+                (repository_id,provider,owner,name,installation_scope,local_path,created_at,organization_id)
+                VALUES (?,?,?,?,?,?,?,?)
+                ON CONFLICT(organization_id,provider,owner,name,installation_scope) DO UPDATE SET
+                local_path=excluded.local_path, active=1""", (str(uuid4()), *values, local_path, now, organization_id))
             self._conn.commit()
-            row = self._conn.execute("SELECT * FROM repositories WHERE provider=? AND owner=? AND name=? AND installation_scope=?", values).fetchone()
+            row = self._conn.execute("SELECT * FROM repositories WHERE organization_id=? AND provider=? AND owner=? AND name=? AND installation_scope=?", (organization_id, *values)).fetchone()
         return self._record(row)
 
-    def get(self, repository_id: str, *, access_checker=None) -> RepositoryRecord:
+    def holder(self, provider: str, owner: str, name: str) -> str | None:
+        """The organization that owns this repository, or None when nobody has registered it."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT organization_id FROM repositories WHERE provider=? AND owner=? AND name=? AND active=1 "
+                "ORDER BY created_at LIMIT 1", (provider, owner, name)).fetchone()
+        return row["organization_id"] if row else None
+
+    def get(self, repository_id: str, *, organization_id: str | None, access_checker=None) -> RepositoryRecord:
+        """``organization_id=None`` skips the tenant check (platform internals only)."""
         with self._lock:
             row = self._conn.execute("SELECT * FROM repositories WHERE repository_id=?", (repository_id,)).fetchone()
-        if row is None or not row["active"]:
+        if row is None or not row["active"] or (organization_id is not None and row["organization_id"] != organization_id):
             raise RepositoryAccessError("repository is deleted or inaccessible")
         record = self._record(row)
         if access_checker is not None and not access_checker(record):
             raise RepositoryAccessError("repository access denied")
         return record
 
-    def resolve_base(self, repository_id: str, revision: str = "HEAD", *, access_checker=None) -> str:
-        record = self.get(repository_id, access_checker=access_checker)
+    def resolve_base(self, repository_id: str, revision: str = "HEAD", *, organization_id: str | None, access_checker=None) -> str:
+        record = self.get(repository_id, organization_id=organization_id, access_checker=access_checker)
         if not record.local_path:
             raise RepositoryAccessError("repository has no configured provider resolver")
         try:
@@ -91,4 +119,4 @@ class RepositoryStore:
 
     @staticmethod
     def _record(row: sqlite3.Row) -> RepositoryRecord:
-        return RepositoryRecord(row["repository_id"], row["provider"], row["owner"], row["name"], row["installation_scope"], row["local_path"], bool(row["active"]), row["created_at"])
+        return RepositoryRecord(row["repository_id"], row["provider"], row["owner"], row["name"], row["installation_scope"], row["local_path"], bool(row["active"]), row["created_at"], row["organization_id"])

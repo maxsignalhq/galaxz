@@ -253,7 +253,6 @@ class ArtifactRollbackRequest(BaseModel):
     workspace_root: str = ""
     version: int
     project_id: str | None = None
-    organization_id: str | None = None
 
 
 class MemoryRequest(BaseModel):
@@ -850,18 +849,22 @@ def get_task_throughput(request: Request, hours: int = 24):
 
 
 @app.post("/memory", status_code=201)
-def remember_memory(req: MemoryRequest):
+def remember_memory(req: MemoryRequest, request: Request):
     try:
-        entry = _andromeda.nebula.remember(req.namespace, req.content, req.tags, req.source_task_id)
+        entry = _andromeda.nebula.remember(
+            req.namespace, req.content, req.tags, req.source_task_id, organization_id=_organization(request)
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return entry.model_dump(mode="json")
 
 
 @app.get("/memory")
-def recall_memory(namespace: str, q: str | None = None, limit: int = 5):
+def recall_memory(request: Request, namespace: str, q: str | None = None, limit: int = 5):
     namespaces = [ns for ns in namespace.split(",") if ns]
-    entries = _andromeda.nebula.recall(namespaces, query=q, limit=max(1, min(limit, 50)))
+    entries = _andromeda.nebula.recall(
+        namespaces, query=q, limit=max(1, min(limit, 50)), organization_id=_organization(request)
+    )
     return [e.model_dump(mode="json") for e in entries]
 
 
@@ -882,13 +885,13 @@ def get_wormhole_status():
 
 
 @app.get("/memory/namespaces")
-def list_memory_namespaces():
-    return _andromeda.nebula.namespaces()
+def list_memory_namespaces(request: Request):
+    return _andromeda.nebula.namespaces(organization_id=_organization(request))
 
 
 @app.delete("/memory/{memory_id}")
-def forget_memory(memory_id: UUID):
-    if not _andromeda.nebula.forget(memory_id):
+def forget_memory(memory_id: UUID, request: Request):
+    if not _andromeda.nebula.forget(memory_id, organization_id=_organization(request)):
         raise HTTPException(status_code=404, detail="memory not found")
     return {"deleted": str(memory_id)}
 
@@ -916,14 +919,15 @@ def install_catalog_agent(agent_id: str, req: CatalogInstallRequest | None = Non
 
 
 @app.get("/artifacts")
-def list_artifacts():
-    return _andromeda.artifact_store.list_files()
+def list_artifacts(request: Request):
+    return _andromeda.artifact_store.list_files(organization_id=_organization(request))
 
 
 @app.get("/artifacts/history")
-def get_artifact_history(path: str, workspace_root: str = "", project_id: str | None = None, organization_id: str | None = None):
-    key = identity_key(workspace_root, path)
-    history = _andromeda.artifact_store.history(key)
+def get_artifact_history(request: Request, path: str, workspace_root: str = "", project_id: str | None = None):
+    organization_id = _organization(request)
+    key = identity_key(workspace_root, path, organization_id)
+    history = _andromeda.artifact_store.history(key, organization_id=organization_id)
     if not history:
         raise HTTPException(status_code=404, detail="no versions found for this path")
     try:
@@ -934,9 +938,10 @@ def get_artifact_history(path: str, workspace_root: str = "", project_id: str | 
 
 
 @app.get("/artifacts/diff")
-def get_artifact_diff(path: str, workspace_root: str = "", from_: int | None = None, to: int | None = None, project_id: str | None = None, organization_id: str | None = None):
-    key = identity_key(workspace_root, path)
-    latest = _andromeda.artifact_store.latest_version_number(key)
+def get_artifact_diff(request: Request, path: str, workspace_root: str = "", from_: int | None = None, to: int | None = None, project_id: str | None = None):
+    organization_id = _organization(request)
+    key = identity_key(workspace_root, path, organization_id)
+    latest = _andromeda.artifact_store.latest_version_number(key, organization_id=organization_id)
     if latest is None:
         raise HTTPException(status_code=404, detail="no versions found for this path")
 
@@ -945,7 +950,7 @@ def get_artifact_diff(path: str, workspace_root: str = "", from_: int | None = N
 
     try:
         _andromeda.artifact_store.get_version(key, to_version, project_id=project_id, organization_id=organization_id)
-        diff_text = _andromeda.artifact_store.diff(key, from_version, to_version)
+        diff_text = _andromeda.artifact_store.diff(key, from_version, to_version, organization_id=organization_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError:
@@ -955,10 +960,11 @@ def get_artifact_diff(path: str, workspace_root: str = "", from_: int | None = N
 
 
 @app.post("/artifacts/rollback")
-def rollback_artifact(req: ArtifactRollbackRequest):
-    key = identity_key(req.workspace_root, req.path)
+def rollback_artifact(req: ArtifactRollbackRequest, request: Request):
+    organization_id = _organization(request)
+    key = identity_key(req.workspace_root, req.path, organization_id)
     try:
-        row = _andromeda.artifact_store.get_version(key, req.version, project_id=req.project_id, organization_id=req.organization_id)
+        row = _andromeda.artifact_store.get_version(key, req.version, project_id=req.project_id, organization_id=organization_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     if row is None:
@@ -1031,7 +1037,8 @@ def _issue_policy_grant(item: dict) -> bool:
     if not isinstance(hold, dict) or not all(isinstance(hold.get(k), str) for k in ("origin", "skill", "digest")):
         return False
     _andromeda.policy_grants.issue(
-        origin=hold["origin"], skill=hold["skill"], digest=hold["digest"], granted_by="review"
+        origin=hold["origin"], skill=hold["skill"], digest=hold["digest"], granted_by="review",
+        organization_id=item.get("organization_id") or "default",
     )
     return True
 
@@ -1071,8 +1078,8 @@ def create_goal(req: GoalRequest, request: Request):
     _andromeda.goal_store.create_goal(goal)
     if req.repository_id:
         try:
-            record = _repository_store.get(req.repository_id)
-            sha = _repository_store.resolve_base(record.repository_id, req.base_revision)
+            record = _repository_store.get(req.repository_id, organization_id=goal.organization_id)
+            sha = _repository_store.resolve_base(record.repository_id, req.base_revision, organization_id=goal.organization_id)
             _andromeda.goal_store.bind_repository(goal.goal_id, record.repository_id, req.base_revision, sha)
         except (RepositoryAccessError, ValueError) as exc:
             _andromeda.goal_store.set_goal_status(goal.goal_id, "failed")
@@ -1150,23 +1157,43 @@ def get_goal(goal_id: str, request: Request):
 
 
 @app.post("/repositories", status_code=201)
-def register_repository(req: RepositoryRequest):
+def register_repository(req: RepositoryRequest, request: Request):
     try:
-        return _repository_store.register(**req.model_dump()).__dict__
+        return _repository_store.register(**req.model_dump(), organization_id=_organization(request)).__dict__
     except (RepositoryAccessError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/repositories/{repository_id}")
-def get_repository(repository_id: str):
+def get_repository(repository_id: str, request: Request):
     try:
-        return _repository_store.get(repository_id).__dict__
+        return _repository_store.get(repository_id, organization_id=_organization(request)).__dict__
     except RepositoryAccessError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+def _require_github_repository(request: Request, owner: str, repository: str) -> None:
+    """A GitHub installation is access to repositories; each repository belongs to one organization.
+
+    Unregistered repositories stay usable by the ``default`` organization (legacy behaviour). Anyone
+    else needs the repository registered to their own organization; another organization's is a 404.
+    """
+    organization_id = _organization(request)
+    holder = _repository_store.holder("github", owner, repository)
+    if holder is None and organization_id == "default":
+        return
+    if holder != organization_id:
+        raise HTTPException(status_code=404, detail="repository not found")
+
+
+def _require_default_organization(request: Request) -> None:
+    if _organization(request) != "default":
+        raise HTTPException(status_code=403, detail="not available to this organization")
+
+
 @app.post("/github/pull-request")
-def create_github_pull_request(req: GitHubPullRequestRequest):
+def create_github_pull_request(req: GitHubPullRequestRequest, request: Request):
+    _require_github_repository(request, req.owner, req.repository)
     evidence = PullRequestEvidence(
         goal_id=req.goal_id, task_ids=req.task_ids, artifacts=req.artifacts,
         validation=req.validation, review_decision=req.review_decision,
@@ -1178,7 +1205,8 @@ def create_github_pull_request(req: GitHubPullRequestRequest):
 
 
 @app.post("/github/check-run")
-def create_github_check_run(req: GitHubCheckRequest):
+def create_github_check_run(req: GitHubCheckRequest, request: Request):
+    _require_github_repository(request, req.owner, req.repository)
     return _github_client(req.installation_id).create_check_run(
         req.owner, req.repository, head_sha=req.head_sha, name=req.name,
         passed=req.passed, summary=req.summary,
@@ -1186,12 +1214,14 @@ def create_github_check_run(req: GitHubCheckRequest):
 
 
 @app.get("/github/installations")
-def list_github_installations():
+def list_github_installations(request: Request):
+    _require_default_organization(request)
     return _github_app().list_installations()
 
 
 @app.get("/github/installations/{installation_id}/repositories")
-def list_github_installation_repositories(installation_id: int):
+def list_github_installation_repositories(installation_id: int, request: Request):
+    _require_default_organization(request)
     return _github_app().list_repositories(installation_id)
 
 
@@ -1621,6 +1651,7 @@ def approve_skill_lesson(candidate_id: str, req: LessonReviewRequest, request: R
             namespace=f"{SKILL_NAMESPACE_PREFIX}{candidate.skill_id}",
             content=edited or candidate.content,
             tags=["lesson", f"agent:{candidate.agent_id}"],
+            organization_id=_organization(request),
         )
     except Exception:
         store.revert(candidate_id)  # nothing was stored, so the reviewer can try again

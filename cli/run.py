@@ -238,12 +238,36 @@ def _accounts():
     return get_account_store(), AccountError, audit_event
 
 
+@admin.command("org-create")
+@click.argument("organization_id")
+@click.option("--name", default="", help="Display name")
+def admin_org_create(organization_id, name):
+    """Create an organization (a tenant). Its users see only its own data."""
+    store, AccountError, audit_event = _accounts()
+    try:
+        store.create_organization(organization_id, name)
+    except AccountError as exc:
+        raise click.ClickException(str(exc))
+    audit_event("cli", "admin.org.create", "created", organization_id=organization_id)
+    click.echo(f"created organization {organization_id}")
+
+
+@admin.command("org-list")
+def admin_org_list():
+    store, _, _ = _accounts()
+    for organization in store.list_organizations():
+        click.echo(f"{organization['id']}\t{organization['name']}")
+
+
 @admin.command("user-create")
 @click.argument("email")
 @click.option("--role", required=True, help="viewer, operator, reviewer or admin")
 @click.option("--name", "display_name", default="", help="Display name")
-def admin_user_create(email, role, display_name):
+@click.option("--organization", "organization_id", default="default", help="Organization id (see org-create)")
+def admin_user_create(email, role, display_name, organization_id):
     store, AccountError, audit_event = _accounts()
+    if organization_id != "default" and not store.organization_exists(organization_id):
+        raise click.ClickException(f"unknown organization {organization_id}; create it with: galaxz admin org-create {organization_id}")
     if not os.environ.get("GALAXZ_API_KEY") and not store.has_users():
         click.echo(
             "warning: this is the first user and GALAXZ_API_KEY is not set. Authentication becomes required now; "
@@ -251,7 +275,7 @@ def admin_user_create(email, role, display_name):
             err=True,
         )
     try:
-        user = store.create_user(email, role, display_name=display_name)
+        user = store.create_user(email, role, display_name=display_name, organization_id=organization_id)
     except AccountError as exc:
         raise click.ClickException(str(exc))
     audit_event("cli", "admin.user.create", "created", email=user.email, role=user.role, organization_id=user.organization_id)
