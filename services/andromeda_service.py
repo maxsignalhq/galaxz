@@ -544,6 +544,7 @@ def _route_one(
     skill_id: str,
     task_text: str,
     session_context: Optional[list[TaskSessionContextItem]] = None,
+    organization_id: str = "default",
 ) -> dict:
     session_context = session_context or []
     effective_task_text = _task_text_with_session_context(task_text, session_context)
@@ -553,6 +554,7 @@ def _route_one(
         skill=skill_id,
         payload=_payload_for_skill(skill_id, effective_task_text),
         confidence_threshold=0.65,
+        organization_id=organization_id,
     )
     route_context = {
         "task_ui_session": [
@@ -581,6 +583,14 @@ def _own_goal(request: Request, goal_id: UUID) -> GoalContract:
     return goal
 
 
+def _own_review_item(request: Request, task_id: str) -> dict:
+    """The caller's review item; another organization's is indistinguishable from a missing one."""
+    item = _andromeda.review_queue.get_for(task_id, organization_id=_organization(request))
+    if item is None:
+        raise HTTPException(status_code=404, detail="task not found in review queue")
+    return item
+
+
 def _task_contract(req: TaskRequest, organization_id: str = "default") -> TaskContract:
     skill_id = _normalize_skill_id(req.skill_id)
     effective_task_text = _task_text_with_session_context(req.task, req.session_context)
@@ -597,10 +607,11 @@ def _task_contract(req: TaskRequest, organization_id: str = "default") -> TaskCo
 def _route_code_then_qa(
     task_text: str,
     session_context: Optional[list[TaskSessionContextItem]] = None,
+    organization_id: str = "default",
 ) -> dict:
     contextual_task_text = _task_text_with_session_context(task_text, session_context or [])
     code_prompt = _implementation_prompt_for_auto_route(contextual_task_text)
-    code_state = _route_one("rigel.skill.code_generation", code_prompt)
+    code_state = _route_one("rigel.skill.code_generation", code_prompt, organization_id=organization_id)
     if code_state.get("status") != "complete":
         return code_state
 
@@ -616,7 +627,7 @@ def _route_code_then_qa(
         "Required QA output: ISTQB-style test cases for this implementation and its requirements."
     )
     qa_skill_id = "vega.skill.requirements_to_test_cases"
-    qa_state = _route_one(qa_skill_id, qa_prompt)
+    qa_state = _route_one(qa_skill_id, qa_prompt, organization_id=organization_id)
 
     status = "complete" if qa_state.get("status") == "complete" else qa_state.get("status", "failed")
     confidence_values = [
@@ -669,12 +680,13 @@ def _route_code_then_qa(
 
 
 @app.post("/task")
-def post_task(req: TaskRequest):
+def post_task(req: TaskRequest, request: Request):
+    organization = _organization(request)
     skill_id = _normalize_skill_id(req.skill_id)
     if _is_auto_route(skill_id, req.route_mode):
         if _needs_code_then_qa(req.task):
             try:
-                return _route_code_then_qa(req.task, req.session_context)
+                return _route_code_then_qa(req.task, req.session_context, organization_id=organization)
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
         # Keyword-based classification across all 18 registered skills
@@ -689,7 +701,7 @@ def post_task(req: TaskRequest):
     skill_id = _normalize_skill_id(skill_id)
 
     try:
-        state = _route_one(skill_id, req.task, req.session_context)
+        state = _route_one(skill_id, req.task, req.session_context, organization_id=organization)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -806,38 +818,35 @@ def cancel_job(job_id: UUID, request: Request):
 
 
 @app.get("/review/queue")
-def get_review_queue():
-    return _andromeda.review_queue.get_pending()
+def get_review_queue(request: Request):
+    return _andromeda.review_queue.get_pending(organization_id=_organization(request))
 
 
 @app.get("/review/queue/stats")
-def get_review_queue_stats():
-    return _andromeda.review_queue.get_stats()
+def get_review_queue_stats(request: Request):
+    return _andromeda.review_queue.get_stats(organization_id=_organization(request))
 
 
 @app.get("/review/queue/{task_id}")
-def get_review_queue_item(task_id: str):
-    item = _andromeda.review_queue.get_by_task_id(task_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="task not found in review queue")
-    return item
+def get_review_queue_item(task_id: str, request: Request):
+    return _own_review_item(request, task_id)
 
 
 @app.get("/tasks/recent")
-def get_recent_tasks(limit: int = 10):
+def get_recent_tasks(request: Request, limit: int = 10):
     limit = max(1, min(limit, 50))
-    return _andromeda.task_log.recent(limit)
+    return _andromeda.task_log.recent(limit, organization_id=_organization(request))
 
 
 @app.get("/tasks/stats")
-def get_task_stats():
-    return _andromeda.task_log.stats()
+def get_task_stats(request: Request):
+    return _andromeda.task_log.stats(organization_id=_organization(request))
 
 
 @app.get("/tasks/throughput")
-def get_task_throughput(hours: int = 24):
+def get_task_throughput(request: Request, hours: int = 24):
     hours = max(1, min(hours, 168))
-    return _andromeda.task_log.throughput(hours)
+    return _andromeda.task_log.throughput(hours, organization_id=_organization(request))
 
 
 @app.post("/memory", status_code=201)
@@ -1089,6 +1098,7 @@ def create_goal(req: GoalRequest, request: Request):
             payload={"objective": goal.objective},
             skill_id="goal.plan_review",
             goal_id=str(goal.goal_id),
+            organization_id=goal.organization_id,
         )
     else:
         _goal_coordinator().start(goal.goal_id, actor="api")
@@ -1267,10 +1277,11 @@ def rerun_goal_task(
 
 
 @app.get("/status")
-def get_status():
+def get_status(request: Request):
+    organization = _organization(request)
     registry_health = _andromeda.registry.health_check()
-    tasks = _andromeda.task_log.stats()
-    review_queue = _andromeda.review_queue.get_pending()
+    tasks = _andromeda.task_log.stats(organization_id=organization)
+    review_queue = _andromeda.review_queue.get_pending(organization_id=organization)
     return {
         "status": "ok",
         "service": "andromeda",
@@ -1404,10 +1415,8 @@ def get_agents():
 
 
 @app.post("/review/queue/{task_id}/approve")
-def approve_task(task_id: str, req: ResolveRequest = ResolveRequest()):
-    item = _andromeda.review_queue.get_by_task_id(task_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="task not found in review queue")
+def approve_task(task_id: str, request: Request, req: ResolveRequest = ResolveRequest()):
+    item = _own_review_item(request, task_id)
 
     resolved = _andromeda.review_queue.resolve(task_id, "approved", req.reviewer_notes)
     if not resolved:
@@ -1436,10 +1445,8 @@ def approve_task(task_id: str, req: ResolveRequest = ResolveRequest()):
 
 
 @app.post("/review/queue/{task_id}/accept")
-def accept_task(task_id: str, req: ResolveRequest = ResolveRequest()):
-    item = _andromeda.review_queue.get_by_task_id(task_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="task not found in review queue")
+def accept_task(task_id: str, request: Request, req: ResolveRequest = ResolveRequest()):
+    item = _own_review_item(request, task_id)
 
     resolved = _andromeda.review_queue.resolve(task_id, "accepted", req.reviewer_notes)
     if not resolved:
@@ -1468,10 +1475,8 @@ def accept_task(task_id: str, req: ResolveRequest = ResolveRequest()):
 
 
 @app.post("/review/queue/{task_id}/reject")
-def reject_task(task_id: str, req: ResolveRequest = ResolveRequest()):
-    item = _andromeda.review_queue.get_by_task_id(task_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="task not found in review queue")
+def reject_task(task_id: str, request: Request, req: ResolveRequest = ResolveRequest()):
+    item = _own_review_item(request, task_id)
 
     resolved = _andromeda.review_queue.resolve(task_id, "rejected", req.reviewer_notes)
     if not resolved:
@@ -1499,10 +1504,10 @@ def reject_task(task_id: str, req: ResolveRequest = ResolveRequest()):
 
 
 @app.post("/tasks/{task_id}/feedback")
-def submit_task_feedback(task_id: str, req: TaskFeedbackRequest):
+def submit_task_feedback(task_id: str, req: TaskFeedbackRequest, request: Request):
     if req.outcome not in ("accepted", "rejected"):
         raise HTTPException(status_code=400, detail="outcome must be 'accepted' or 'rejected'")
-    task = _andromeda.task_log.get(task_id)
+    task = _andromeda.task_log.get(task_id, organization_id=_organization(request))
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
     try:
@@ -1854,7 +1859,7 @@ def health():
 
     # task_log check
     try:
-        stats = _andromeda.task_log.stats()
+        stats = _andromeda.task_log.stats(organization_id=None)  # liveness probe: a platform-wide count
         checks["task_log"] = {"status": "ok", "recent_tasks": stats.get("total", 0)}
     except Exception:
         checks["task_log"] = {"status": "error", "recent_tasks": 0}

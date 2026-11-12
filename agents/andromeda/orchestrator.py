@@ -570,6 +570,7 @@ class Andromeda:
                 goal_id=goal_id,
                 planned_task_id=str(task.task_id) if goal_id else None,
                 attempt_id=str(task.execution_attempt_id) if task.execution_attempt_id else None,
+                organization_id=task.organization_id,
             )
             result["review_pending"] = True
         return result

@@ -73,6 +73,7 @@ class CompletionPublisher:
                 goal_id=goal_id,
                 planned_task_id=str(task.task_id) if goal_id else None,
                 attempt_id=event["attempt_id"],
+                organization_id=task.organization_id,
             )
             review = self.reviews.get_by_task_id(event["attempt_id"] if goal_id else str(task.task_id))
             if review is None or review["attempt_id"] != event["attempt_id"] or (

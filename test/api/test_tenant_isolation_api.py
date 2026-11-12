@@ -114,11 +114,69 @@ def test_closed_reads_require_credentials(tenants):
         assert client.get(path, headers=a).status_code in (200, 500), path
 
 
+def _review_item(client, task_id, organization):
+    client._andromeda.review_queue.enqueue(
+        task_id=task_id, task_type="code", confidence=0.4, payload={"secret": "org payload"}, organization_id=organization
+    )
+    client._andromeda.task_log.write(
+        __import__("agents.andromeda.state", fromlist=["AndromedaState"]).AndromedaState(
+            task_id=task_id, origin="t", task_type="code", status="escalated", payload={}, required_skills=["s.k"], priority="normal",
+            issued_at="2026-11-07T10:00:00+00:00", timeout_ms=1000, organization_id=organization,
+        )
+    )
+
+
+def test_other_organization_gets_404_on_every_review_route(tenants):
+    client, a, b = tenants
+    _review_item(client, "task-a", "org-a")
+    assert client.get("/review/queue/task-a", headers=a).status_code == 200
+    for method, path in (
+        ("get", "/review/queue/task-a"),
+        ("post", "/review/queue/task-a/approve"),
+        ("post", "/review/queue/task-a/accept"),
+        ("post", "/review/queue/task-a/reject"),
+        ("post", "/tasks/task-a/feedback"),
+    ):
+        kwargs = {"json": {"outcome": "accepted"}} if path.endswith("feedback") else {}
+        response = getattr(client, method)(path, headers=b, **kwargs)
+        assert response.status_code == 404, (path, response.status_code)
+    # nothing was resolved by the foreign attempts
+    assert client._andromeda.review_queue.get_by_task_id("task-a")["status"] == "pending"
+
+
+def test_review_queue_tasks_and_status_are_per_organization(tenants):
+    client, a, b = tenants
+    _review_item(client, "task-a", "org-a")
+    assert [i["task_id"] for i in client.get("/review/queue", headers=a).json()] == ["task-a"]
+    assert client.get("/review/queue", headers=b).json() == []
+    assert client.get("/review/queue/stats", headers=b).json()["pending"] == 0
+    assert [t["task_id"] for t in client.get("/tasks/recent", headers=a).json()] == ["task-a"]
+    assert client.get("/tasks/recent", headers=b).json() == []
+    assert client.get("/tasks/stats", headers=b).json()["total"] == 0
+    assert client.get("/status", headers=a).json()["review_queue"]["pending"] == 1
+    assert client.get("/status", headers=b).json()["review_queue"]["pending"] == 0
+
+
+def test_task_route_stamps_the_callers_organization(tenants, monkeypatch):
+    client, a, _ = tenants
+    seen = []
+
+    def fake_route(task, context=None):
+        seen.append(task.organization_id)
+        return {"status": "complete", "task_id": str(task.task_id), "artifacts": [], "context": {}}
+
+    monkeypatch.setattr(client._andromeda, "route", fake_route)
+    response = client.post("/task", json={"task": "write a validator", "skill_id": "rigel.skill.code_generation"}, headers=a)
+    assert response.status_code == 200, response.text
+    assert seen == ["org-a"]
+
+
 def test_service_never_uses_an_unscoped_goal_or_job_lookup():
     source = Path(svc.__file__).read_text()
     # the one remaining unscoped goal_store.get_goal is the review-resume path, which moves in B2
     assert source.count("goal_store.get_goal(") == 1
-    assert "organization_id=None" not in source
+    # the only platform-wide read is the unauthenticated liveness count in /health
+    assert source.count("organization_id=None") == 1
     assert "_all_organizations" not in source
     # the single remaining get_job is cancel_job re-reading a job it already authorised
     assert len(re.findall(r"\.get_job\(", source)) == 1

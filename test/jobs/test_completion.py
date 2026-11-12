@@ -44,7 +44,7 @@ def test_completion_publishes_only_committed_evidence_and_replays(completion):
     jobs, artifacts, reviews, job, attempt, result = completion
     publisher = CompletionPublisher(jobs, artifacts, reviews)
     publisher.publish_pending()
-    assert reviews.get_pending() == []
+    assert reviews.get_pending(organization_id="default") == []
     assert artifacts.list_files() == []
     finish(completion)
     finish(completion)
@@ -54,7 +54,7 @@ def test_completion_publishes_only_committed_evidence_and_replays(completion):
     assert review["attempt_id"] == str(attempt.attempt_id)
     ref = review["agent_output"]["artifact_versions"][0]
     assert artifacts.get_version(ref["identity_key"], ref["version"])["content"] == "first"
-    assert len(reviews.get_pending()) == 1
+    assert len(reviews.get_pending(organization_id="default")) == 1
     assert jobs.pending_completions() == []
 
 
@@ -74,14 +74,14 @@ def test_failed_publication_is_recoverable(completion, monkeypatch, boundary):
     assert jobs.get_job(job.job_id).status is JobStatus.completed
     assert len(jobs.pending_completions()) == 1
     if boundary != "ack":
-        assert reviews.get_pending() == []
+        assert reviews.get_pending(organization_id="default") == []
     if boundary == "artifact":
         assert artifacts.list_files() == []
     monkeypatch.setattr(target, method, original)
     # Reopen the durable queue to simulate restart.
     restarted = SqliteJobRepository(jobs.database)
     CompletionPublisher(restarted, artifacts, reviews).publish_pending()
-    assert len(reviews.get_pending()) == 1
+    assert len(reviews.get_pending(organization_id="default")) == 1
     assert len(artifacts.history("::a.py")) == 1
     assert restarted.pending_completions() == []
 
@@ -112,7 +112,7 @@ def test_concurrent_publishers_do_not_duplicate_versions(completion):
                    for _ in range(2)]
         for future in futures:
             future.result()
-    assert len(reviews.get_pending()) == 1
+    assert len(reviews.get_pending(organization_id="default")) == 1
     assert len(artifacts.history("::a.py")) == 1
 
 
@@ -147,7 +147,7 @@ def test_expired_completion_cannot_publish_evidence(completion):
     CompletionPublisher(jobs, artifacts, reviews).publish_pending()
     assert jobs.pending_completions() == []
     assert artifacts.list_files() == []
-    assert reviews.get_pending() == []
+    assert reviews.get_pending(organization_id="default") == []
 
 
 def test_retried_completion_rejects_changed_evidence(completion):
@@ -187,11 +187,11 @@ def test_durable_routing_defers_artifacts_and_reviews(tmp_path):
     assert result["status"] == "escalated"
     assert result["artifacts"]
     assert artifacts.list_files() == []
-    assert reviews.get_pending() == []
+    assert reviews.get_pending(organization_id="default") == []
     # The synchronous migration path still publishes immediately.
     router.route(task=task.model_copy(update={"execution_attempt_id": None}))
     assert len(artifacts.list_files()) == 1
-    assert len(reviews.get_pending()) == 1
+    assert len(reviews.get_pending(organization_id="default")) == 1
 
 
 def test_populated_upgrade_preserves_job_and_backfills_default_organization(tmp_path):

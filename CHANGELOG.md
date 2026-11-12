@@ -35,6 +35,10 @@ the working tree. It is intended to be reviewed before the next GitHub push.
   organization. **Behaviour change:** `GET /status`, `/agents`, `/tasks/recent`, `/tasks/stats` and
   `/review/queue` no longer answer unauthenticated requests; they need the `read` permission (health,
   liveness and readiness stay open). Organizations cannot be created yet (phase B2).
+- Tenant scoping (accounts phase B2a): the task log and review queue carry `organization_id` (migration
+  `0008_review_task_scope`); `/task`, `/review/queue*`, `/tasks/*`, `/status` and task feedback only see the
+  caller's organization. Fixes two PostgreSQL bugs in `PostgresTaskLog.write` and
+  `PostgresReviewQueue.get_stats`.
 - Secret references: `${{ secrets.<id> }}` in a `quasar.*` tool payload is resolved
   only while the tool runs (scoped to organization, repository and skill) and
   redacted from results and errors, so plaintext never reaches the goal, job,

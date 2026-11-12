@@ -246,3 +246,34 @@ def test_postgres_goals_and_jobs_are_scoped_by_organization(database):
     assert jobs.list_jobs(organization_id="default") == []
     assert [j.job_id for j in jobs.list_jobs_all_organizations()] == [job.job_id]
     jobs.close()
+
+
+def test_postgres_task_log_and_review_queue_are_scoped_by_organization(database):
+    from agents.andromeda.state import AndromedaState
+    from core.storage import PostgresReviewQueue, PostgresTaskLog
+
+    migrate(database)
+    url = database.url.render_as_string(hide_password=False)
+    log, queue = PostgresTaskLog(url, engine=database), PostgresReviewQueue(url, engine=database)
+
+    def state(task_id, org):
+        return AndromedaState(task_id=task_id, origin="t", task_type="code", status="complete", payload={},
+                              required_skills=["s.k"], priority="normal", issued_at="2026-11-07T10:00:00+00:00",
+                              timeout_ms=1000, organization_id=org)
+
+    log.write(state("t-a", "org-a"))
+    log.write(state("t-b", "org-b"))
+    assert log.get("t-a", organization_id="org-a")["organization_id"] == "org-a"
+    assert log.get("t-a", organization_id="org-b") is None
+    assert [r["task_id"] for r in log.recent(10, organization_id="org-a")] == ["t-a"]
+    assert log.stats(organization_id="org-a")["total"] == 1 and log.stats(organization_id=None)["total"] == 2
+    log.update_status("t-a", "code", "approved")
+    assert log.stats(organization_id="org-a")["total"] == 2
+
+    queue.enqueue("q-a", "code", 0.4, {}, organization_id="org-a")
+    queue.enqueue("q-b", "code", 0.4, {})
+    assert queue.get_for("q-a", organization_id="org-a")["task_id"] == "q-a"
+    assert queue.get_for("q-a", organization_id="default") is None
+    assert [i["task_id"] for i in queue.get_pending(organization_id="default")] == ["q-b"]
+    assert queue.get_stats(organization_id="org-a")["pending"] == 1
+    assert len(queue.get_pending(organization_id=None)) == 2

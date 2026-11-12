@@ -131,6 +131,23 @@ database.
 - Still unscoped, by design for B1: `/route` and `/task` (tasks created outside goals and jobs carry the
   default organization), the A2A gateway, and the review-resume path.
 
+### B2a as built (task log and review queue)
+
+- **Migration `0008_review_task_scope`** adds `organization_id` to `tasks` and `review_queue` (SQLite stores add the
+  column on open; existing rows land in `default`).
+- `TaskLog` and `ReviewQueue` (SQLite and Postgres): `get`, `recent`, `stats`, `throughput`, `get_pending`,
+  `get_stats` require `organization_id`; `None` means every organization and is used only by the unauthenticated
+  `/health` liveness count. `ReviewQueue.get_for` is the tenant-facing lookup. `enqueue` takes `organization_id`
+  (default `default`) and every production caller passes it: Andromeda escalation, the completion publisher
+  (from the task) and goal-plan review (from the goal).
+- A status change in the task log keeps the organization the task was created under.
+- `/task`, `/review/queue*`, `/tasks/*`, `/status` and `/tasks/{id}/feedback` are scoped; another organization
+  gets 404.
+- Two latent PostgreSQL bugs surfaced by the new Postgres test and fixed here: `PostgresTaskLog.write` sent a
+  boolean to an integer column, and `PostgresReviewQueue.get_stats` compared a text deadline to a timestamp.
+- Still unscoped (B2b): artifacts, repositories, memory, policy grants, the A2A gateway; `org-create` still
+  waits for B2b.
+
 ### Risks to review
 
 - Nebula recall and policy grants are the two places a leak turns into prompt content or authority, so they

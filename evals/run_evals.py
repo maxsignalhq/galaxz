@@ -474,8 +474,8 @@ def run_andromeda_eval(corpus: DeterministicCorpus) -> EvalCaseResult:
         _expect(vega_state["assigned_agent"] == "vega", "Andromeda routes QA work to Vega")
         _expect(rigel_state["assigned_agent"] == "rigel", "Andromeda routes engineering work to Rigel")
         _expect(missing_state["status"] == "no_agent_found", "Andromeda surfaces no-match routing cleanly")
-        _expect(task_log.get(vega_state["task_id"]) is not None, "Andromeda persists Vega task state")
-        _expect(task_log.get(rigel_state["task_id"]) is not None, "Andromeda persists Rigel task state")
+        _expect(task_log.get(vega_state["task_id"], organization_id=None) is not None, "Andromeda persists Vega task state")
+        _expect(task_log.get(rigel_state["task_id"], organization_id=None) is not None, "Andromeda persists Rigel task state")
         result.checks.extend([
             "Vega routing",
             "Rigel routing",
@@ -655,7 +655,7 @@ def run_api_eval() -> EvalCaseResult:
                 },
             }
 
-        def get_pending(self) -> list[dict]:
+        def get_pending(self, **_) -> list[dict]:
             return [item for item in self._items.values() if item["status"] == "pending"]
 
         def get_by_task_id(self, task_id: str) -> dict | None:
@@ -673,10 +673,10 @@ def run_api_eval() -> EvalCaseResult:
         def __init__(self) -> None:
             self.status_updates: list[tuple[str, str, str]] = []
 
-        def recent(self, limit: int) -> list[dict]:
+        def recent(self, limit: int, **_) -> list[dict]:
             return [{"task_id": "recent-task", "status": "complete"}][:limit]
 
-        def stats(self) -> dict:
+        def stats(self, **_) -> dict:
             return {"total": 2, "complete": 1, "failed": 0, "escalated": 1}
 
         def update_status(self, task_id: str, task_type: str, new_status: str) -> None:

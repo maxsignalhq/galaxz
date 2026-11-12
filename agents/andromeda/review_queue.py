@@ -34,12 +34,13 @@ _MIGRATE_STMTS = [
     "ALTER TABLE review_queue ADD COLUMN goal_id TEXT",
     "ALTER TABLE review_queue ADD COLUMN planned_task_id TEXT",
     "ALTER TABLE review_queue ADD COLUMN attempt_id TEXT",
+    "ALTER TABLE review_queue ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default'",
 ]
 
 _COLUMNS = [
     "id", "task_id", "task_type", "skill_id", "agent_id", "agent_output",
     "sla_deadline", "confidence", "payload", "status", "created_at",
-    "reviewed_at", "reviewer_notes", "goal_id", "planned_task_id", "attempt_id",
+    "reviewed_at", "reviewer_notes", "goal_id", "planned_task_id", "attempt_id", "organization_id",
 ]
 
 
@@ -84,6 +85,7 @@ class ReviewQueue:
         goal_id: Optional[str] = None,
         planned_task_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
+        organization_id: str = "default",
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         with self._lock:
@@ -91,26 +93,33 @@ class ReviewQueue:
                 """
                 INSERT OR IGNORE INTO review_queue
                     (task_id, task_type, skill_id, agent_id, agent_output, sla_deadline,
-                     confidence, payload, status, created_at, goal_id, planned_task_id, attempt_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
+                     confidence, payload, status, created_at, goal_id, planned_task_id, attempt_id, organization_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
                 """,
                 (
                     task_id, task_type, skill_id, agent_id,
                     json.dumps(agent_output or {}), sla_deadline,
-                    confidence, json.dumps(payload), now, goal_id, planned_task_id, attempt_id,
+                    confidence, json.dumps(payload), now, goal_id, planned_task_id, attempt_id, organization_id,
                 ),
             )
             self._conn.commit()
 
-    def get_pending(self) -> list[dict]:
+    def get_pending(self, *, organization_id: str | None) -> list[dict]:
+        """Pending items of one organization (``None`` = every organization, platform internals only)."""
         with self._lock:
             cur = self._conn.execute(
                 f"SELECT {', '.join(_COLUMNS)} FROM review_queue "
-                "WHERE status = 'pending' "
-                "ORDER BY COALESCE(sla_deadline, '9999') ASC, created_at ASC"
+                "WHERE status = 'pending' AND (? IS NULL OR organization_id = ?) "
+                "ORDER BY COALESCE(sla_deadline, '9999') ASC, created_at ASC",
+                (organization_id, organization_id),
             )
             rows = cur.fetchall()
         return [_row_to_dict(r) for r in rows]
+
+    def get_for(self, task_id: str, *, organization_id: str) -> Optional[dict]:
+        """The item, or None when it is missing *or* another organization's."""
+        item = self.get_by_task_id(task_id)
+        return item if item is not None and item.get("organization_id") == organization_id else None
 
     def get_by_task_id(self, task_id: str) -> Optional[dict]:
         with self._lock:
@@ -132,24 +141,28 @@ class ReviewQueue:
             self._conn.commit()
         return cur.rowcount > 0
 
-    def get_stats(self) -> dict:
+    def get_stats(self, *, organization_id: str | None) -> dict:
+        scope = (organization_id, organization_id)
         with self._lock:
             cur = self._conn.execute(
-                "SELECT status, COUNT(*) FROM review_queue GROUP BY status"
+                "SELECT status, COUNT(*) FROM review_queue WHERE (? IS NULL OR organization_id = ?) GROUP BY status",
+                scope,
             )
             counts = {row[0]: row[1] for row in cur.fetchall()}
 
             oldest_cur = self._conn.execute(
                 "SELECT created_at FROM review_queue "
-                "WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1"
+                "WHERE status = 'pending' AND (? IS NULL OR organization_id = ?) ORDER BY created_at ASC LIMIT 1",
+                scope,
             )
             oldest_row = oldest_cur.fetchone()
 
             now_iso = datetime.now(timezone.utc).isoformat()
             sla_cur = self._conn.execute(
                 "SELECT COUNT(*) FROM review_queue "
-                "WHERE status = 'pending' AND sla_deadline IS NOT NULL AND sla_deadline < ?",
-                (now_iso,),
+                "WHERE status = 'pending' AND sla_deadline IS NOT NULL AND sla_deadline < ? "
+                "AND (? IS NULL OR organization_id = ?)",
+                (now_iso, *scope),
             )
             sla_breached = sla_cur.fetchone()[0] or 0
 

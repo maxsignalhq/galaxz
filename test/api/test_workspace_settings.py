@@ -42,6 +42,11 @@ def test_host_path_outside_mount_is_rejected(settings_dir, monkeypatch):
     assert exc.value.status_code == 422
 
 
+def _request():
+    from types import SimpleNamespace
+    return SimpleNamespace(state=SimpleNamespace(principal={"organization_id": "default"}))
+
+
 def test_task_response_uses_workspace_snapshot_not_new_settings(settings_dir, monkeypatch):
     old = settings_dir / "old"
     new = settings_dir / "new"
@@ -49,11 +54,11 @@ def test_task_response_uses_workspace_snapshot_not_new_settings(settings_dir, mo
     new.mkdir()
     svc.update_config(svc.ConfigUpdateRequest(workspace_path=str(new)))
     monkeypatch.setattr(svc, "_normalize_skill_id", lambda skill: skill)
-    monkeypatch.setattr(svc, "_route_one", lambda *args: {
+    monkeypatch.setattr(svc, "_route_one", lambda *args, **kwargs: {
         "status": "complete", "context": {"workspace_root": str(old)},
         "writable": True, "artifacts": [{"filename": "a.py", "content": "x = 1"}],
     })
-    response = svc.post_task(svc.TaskRequest(task="generate", skill_id="code_generation"))
+    response = svc.post_task(svc.TaskRequest(task="generate", skill_id="code_generation"), _request())
     assert response["workspace_path"] == str(old)
     assert response["artifacts"][0]["content"] == "x = 1"
     assert response["artifacts"][0]["written"] is True

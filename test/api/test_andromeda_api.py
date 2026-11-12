@@ -33,7 +33,7 @@ class FakeRegistry:
 
 
 class FakeTaskLog:
-    def stats(self) -> dict:
+    def stats(self, **_) -> dict:
         return {"total": 0}
 
 

@@ -106,7 +106,7 @@ def test_andromeda_routes_known_rigel_skill_and_persists_task(
     assert state["assigned_agent"] == "rigel"
     assert state["confidence"] >= 0.65
 
-    persisted = task_log.get(state["task_id"])
+    persisted = task_log.get(state["task_id"], organization_id=None)
     assert persisted is not None
     assert persisted["status"] == "complete"
     assert persisted["assigned_agent"] == "rigel"

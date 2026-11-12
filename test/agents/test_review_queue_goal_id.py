@@ -30,4 +30,4 @@ def test_goal_review_identifies_immutable_attempt_and_planned_task(tmp_path):
     assert item["planned_task_id"] == "task-1"
     assert item["attempt_id"] == "attempt-1"
     assert item["confidence"] == 0.3
-    assert len(q.get_pending()) == 1
+    assert len(q.get_pending(organization_id="default")) == 1

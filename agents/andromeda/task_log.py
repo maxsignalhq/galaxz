@@ -23,13 +23,14 @@ CREATE TABLE IF NOT EXISTS tasks (
     PRIMARY KEY (task_id, status)
 )
 """
+_ORGANIZATION_COLUMN = "organization_id TEXT NOT NULL DEFAULT 'default'"
 
 _UPSERT = """
 INSERT INTO tasks (
     task_id, task_type, assigned_agent, status, confidence,
     retry_count, escalated_to_human, failure_reason,
-    issued_at, completed_at, payload_json, result_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    issued_at, completed_at, payload_json, result_json, organization_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(task_id, status) DO UPDATE SET
     task_type          = excluded.task_type,
     assigned_agent     = excluded.assigned_agent,
@@ -42,11 +43,12 @@ ON CONFLICT(task_id, status) DO UPDATE SET
     payload_json       = excluded.payload_json,
     result_json        = excluded.result_json
 """
+# organization_id is stamped on first insert and never updated
 
 _COLUMNS = [
     "task_id", "task_type", "assigned_agent", "status", "confidence",
     "retry_count", "escalated_to_human", "failure_reason",
-    "issued_at", "completed_at", "payload_json", "result_json",
+    "issued_at", "completed_at", "payload_json", "result_json", "organization_id",
 ]
 
 
@@ -67,6 +69,8 @@ class TaskLog:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._migrate_schema()
         self._conn.execute(_CREATE_TABLE)
+        if "organization_id" not in {row[1] for row in self._conn.execute("PRAGMA table_info(tasks)")}:
+            self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {_ORGANIZATION_COLUMN}")
         self._conn.commit()
 
     def _migrate_schema(self) -> None:
@@ -78,7 +82,12 @@ class TaskLog:
         if cols.get("task_id", (0,) * 6)[5] == 1 and cols.get("status", (0,) * 6)[5] == 0:
             self._conn.execute("ALTER TABLE tasks RENAME TO _tasks_v1")
             self._conn.execute(_CREATE_TABLE)
-            self._conn.execute("INSERT INTO tasks SELECT * FROM _tasks_v1")
+            self._conn.execute(
+                "INSERT INTO tasks (task_id, task_type, assigned_agent, status, confidence, retry_count, "
+                "escalated_to_human, failure_reason, issued_at, completed_at, payload_json, result_json) "
+                "SELECT task_id, task_type, assigned_agent, status, confidence, retry_count, "
+                "escalated_to_human, failure_reason, issued_at, completed_at, payload_json, result_json FROM _tasks_v1"
+            )
             self._conn.execute("DROP TABLE _tasks_v1")
             self._conn.commit()
 
@@ -99,16 +108,20 @@ class TaskLog:
             payload.get("completed_at"),
             payload_json,
             result_json,
+            payload.get("organization_id") or "default",
         )
         with self._lock:
             self._conn.execute(_UPSERT, row)
             self._conn.commit()
 
-    def get(self, task_id: str) -> Optional[dict]:
+    def get(self, task_id: str, *, organization_id: str | None) -> Optional[dict]:
+        """The latest row for a task, or None when it is missing or another organization's.
+        ``organization_id=None`` is for platform internals only."""
         with self._lock:
             cur = self._conn.execute(
-                f"SELECT {', '.join(_COLUMNS)} FROM tasks WHERE task_id = ? ORDER BY rowid DESC LIMIT 1",
-                (task_id,),
+                f"SELECT {', '.join(_COLUMNS)} FROM tasks WHERE task_id = ? "
+                "AND (? IS NULL OR organization_id = ?) ORDER BY rowid DESC LIMIT 1",
+                (task_id, organization_id, organization_id),
             )
             row = cur.fetchone()
         return _row_to_dict(row) if row is not None else None
@@ -116,24 +129,29 @@ class TaskLog:
     def update_status(self, task_id: str, task_type: str, new_status: str) -> None:
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).isoformat()
-        row = (
-            task_id, task_type, None, new_status, None,
-            0, 0, None, None, now, "{}", "{}",
-        )
         with self._lock:
+            # a status change keeps the organization the task was created under
+            known = self._conn.execute(
+                "SELECT organization_id FROM tasks WHERE task_id = ? LIMIT 1", (task_id,)
+            ).fetchone()
+            row = (
+                task_id, task_type, None, new_status, None,
+                0, 0, None, None, now, "{}", "{}", known[0] if known else "default",
+            )
             self._conn.execute(_UPSERT, row)
             self._conn.commit()
 
-    def recent(self, limit: int = 50) -> list[dict]:
+    def recent(self, limit: int = 50, *, organization_id: str | None) -> list[dict]:
         with self._lock:
             cur = self._conn.execute(
-                f"SELECT {', '.join(_COLUMNS)} FROM tasks ORDER BY issued_at DESC LIMIT ?",
-                (limit,),
+                f"SELECT {', '.join(_COLUMNS)} FROM tasks WHERE (? IS NULL OR organization_id = ?) "
+                "ORDER BY issued_at DESC LIMIT ?",
+                (organization_id, organization_id, limit),
             )
             rows = cur.fetchall()
         return [_row_to_dict(r) for r in rows]
 
-    def throughput(self, hours: int = 24) -> list[dict]:
+    def throughput(self, hours: int = 24, *, organization_id: str | None) -> list[dict]:
         """Return per-hour task counts for the last `hours` hours, newest-last."""
         with self._lock:
             cur = self._conn.execute(
@@ -144,15 +162,16 @@ class TaskLog:
                 FROM tasks
                 WHERE issued_at >= datetime('now', ? || ' hours')
                   AND status IN ('complete', 'failed', 'escalated')
+                  AND (? IS NULL OR organization_id = ?)
                 GROUP BY bucket
                 ORDER BY bucket ASC
                 """,
-                (f"-{hours}",),
+                (f"-{hours}", organization_id, organization_id),
             )
             rows = cur.fetchall()
         return [{"bucket": r[0], "count": r[1]} for r in rows]
 
-    def stats(self) -> dict:
+    def stats(self, *, organization_id: str | None) -> dict:
         with self._lock:
             cur = self._conn.execute(
                 """
@@ -161,8 +180,9 @@ class TaskLog:
                     SUM(CASE WHEN status = 'complete'  THEN 1 ELSE 0 END) AS complete,
                     SUM(CASE WHEN status = 'failed'    THEN 1 ELSE 0 END) AS failed,
                     SUM(CASE WHEN status = 'escalated' THEN 1 ELSE 0 END) AS escalated
-                FROM tasks
-                """
+                FROM tasks WHERE (? IS NULL OR organization_id = ?)
+                """,
+                (organization_id, organization_id),
             )
             row = cur.fetchone()
         return {
