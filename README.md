@@ -282,8 +282,9 @@ Galaxz is designed for local and trusted-network deployment. Authentication is o
   --organization acme`. Goals, jobs, tasks, reviews, artifacts, memory, repositories and policy grants are scoped to
   the caller's organization (another organization's data answers 404). A repository belongs to one organization;
   GitHub installations are shared access, so PR and check-run calls need the repository registered to the caller.
-  Orion's stores (fine-tune candidates, lessons, scorecards) are not scoped yet, so keep a deployment
-  single-organization if you use them. `GALAXZ_API_KEY` is an administrator of `default` only.
+  Platform-wide routes (audit, config, forge, Orion, fine-tune candidates, lessons, scorecards) answer 403 to
+  every organization except `default` until Orion's stores are scoped. `GALAXZ_API_KEY` is an administrator of
+  `default` only; use `secret put --organization acme` for another organization's secrets.
 
 Single sign-on and per-agent credentials are specified in
 `docs/specs/2026-11-07-v2-identity-governance-overview.md` and not implemented yet. Prism sends the

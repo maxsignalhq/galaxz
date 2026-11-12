@@ -175,6 +175,22 @@ database.
   jobs with its own origin. Mapping a caller token to an organization is a one-line config change when needed.
 - **Review-resume path.** Keeps its single unscoped goal lookup: the review item was already authorised for the
   caller's organization and carries a goal of the same organization.
+- **Platform-wide routes are closed to other organizations.** `core.accounts.permissions.tenant_scoped` lists the
+  routes that filter by the principal's organization; any other route returns 403 to a principal outside
+  `default` (the audit chain, `/config`, `/forge/*`, `/catalog/*/install`, `/orion/*`, `/finetune/*`, `/lessons*`,
+  `/scorecards*`, `/github/installations*`). A new route therefore fails closed until it is scoped and listed;
+  a guard test pins the list. Shared read-only views (`/agents`, `/catalog`, `/quasar`, `/wormhole`) stay open.
+  Consequence: organization admins cannot run lessons, fine-tune review or scorecards until B3.
+- **Orion ingestion is still platform-wide.** Task feedback from every organization is ingested into Orion's
+  unscoped events, readable only through the `default`-only `/orion/*` routes. Treat the `default` organization
+  as the platform operator until B3.
+- **Repository identity is case-insensitive** (GitHub names are), and the ownership check and insert happen under
+  one lock. Claims are first come, first served: with a shared installation, any admin who can
+  `POST /repositories` can claim a repository the installation reaches, and once claimed the `default`
+  organization loses its legacy unregistered access to it.
+- **Secrets.** `galaxz secret put --organization <id>` stores a secret for another organization (otherwise
+  `GALAXZ_ORGANIZATION_ID`, then `default`). Do not set `GALAXZ_ORGANIZATION_ID` on a multi-tenant server: `default`
+  tasks would resolve that organization's secrets.
 - **`org-create`.** `galaxz admin org-create <id> [--name]`, `org-list`, and `user-create --organization`
   (the organization must exist). Ids are `[a-z0-9-]{2,63}` because they end up inside storage keys.
   This is the first point at which a second organization can exist.

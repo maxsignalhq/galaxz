@@ -70,10 +70,10 @@ class RepositoryStore:
         if local_path is not None and not Path(local_path).is_dir():
             raise RepositoryAccessError("repository path does not exist or is not a directory")
         now = datetime.now(timezone.utc).isoformat()
-        holder = self.holder(provider.strip(), owner.strip(), name.strip())
-        if holder is not None and holder != organization_id:
-            raise ValueError("repository is registered to another organization")
         with self._lock:
+            holder = self.holder(*values[:3])
+            if holder is not None and holder != organization_id:
+                raise ValueError("repository is registered to another organization")
             self._conn.execute("""INSERT INTO repositories
                 (repository_id,provider,owner,name,installation_scope,local_path,created_at,organization_id)
                 VALUES (?,?,?,?,?,?,?,?)
@@ -87,8 +87,9 @@ class RepositoryStore:
         """The organization that owns this repository, or None when nobody has registered it."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT organization_id FROM repositories WHERE provider=? AND owner=? AND name=? AND active=1 "
-                "ORDER BY created_at LIMIT 1", (provider, owner, name)).fetchone()
+                "SELECT organization_id FROM repositories WHERE LOWER(provider)=? AND LOWER(owner)=? AND LOWER(name)=? "
+                "AND active=1 ORDER BY created_at LIMIT 1",
+                (provider.strip().lower(), owner.strip().lower(), name.strip().lower())).fetchone()
         return row["organization_id"] if row else None
 
     def get(self, repository_id: str, *, organization_id: str | None, access_checker=None) -> RepositoryRecord:

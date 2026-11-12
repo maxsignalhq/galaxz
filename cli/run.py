@@ -199,7 +199,8 @@ def secret():
 @click.option("--skill", required=True, help="The only skill allowed to use this secret, e.g. quasar.github.create_issue")
 @click.option("--repository", default="default", show_default=True, help="Repository the secret is bound to")
 @click.option("--task", default="*", show_default=True, help="Task id, or * for any task")
-def secret_put(skill, repository, task):
+@click.option("--organization", "organization_id", default=None, help="Organization the secret belongs to (default: GALAXZ_ORGANIZATION_ID or 'default')")
+def secret_put(skill, repository, task, organization_id):
     """Store a secret (value from stdin or a hidden prompt) and print its reference."""
     from core.secrets import SecretScope
     from core.secrets.resolver import SECRET_SKILL_PREFIXES, configured_organization_id, open_default_store
@@ -214,7 +215,7 @@ def secret_put(skill, repository, task):
         store = open_default_store()
     except (RuntimeError, ValueError) as exc:
         raise click.ClickException(f"{exc}. Set GALAXZ_SECRETS_KEY to a Fernet key.")
-    organization = configured_organization_id()
+    organization = organization_id or configured_organization_id()
     reference = store.put(value, SecretScope(organization, repository, task, skill))
     from core.security.audit import audit_event
 

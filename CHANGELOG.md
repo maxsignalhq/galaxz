@@ -43,7 +43,8 @@ the working tree. It is intended to be reviewed before the next GitHub push.
   the repository registry are per organization, and `galaxz admin org-create` / `org-list` / `user-create
   --organization` make a second organization possible. A repository belongs to one organization; GitHub pull-request
   and check-run calls need the repository registered to the caller's organization, and installation listings are
-  `default`-only. **Behaviour change:** the artifact routes no longer read `organization_id` from the query string or
+  `default`-only. Routes that are not tenant-scoped (audit, config, forge, Orion, fine-tune, lessons, scorecards) return 403 to
+  other organizations until phase B3. `secret put --organization` added. **Behaviour change:** the artifact routes no longer read `organization_id` from the query string or
   body; it comes from the authenticated principal.
 - Secret references: `${{ secrets.<id> }}` in a `quasar.*` tool payload is resolved
   only while the tool runs (scoped to organization, repository and skill) and

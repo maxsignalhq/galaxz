@@ -170,3 +170,78 @@ def test_pre_tenancy_repository_table_is_rebuilt_with_existing_rows_in_default(t
     store = RepositoryStore(path)
     assert store.get("r1", organization_id="default").organization_id == "default"
     assert store.holder("github", "acme", "api") == "default"
+
+
+# --- platform-wide routes are closed to other organizations --------------------------------------
+
+def _probe(path):
+    return path.replace("{", "").replace("}", "")
+
+
+def test_every_route_is_either_declared_tenant_scoped_or_refused_to_other_organizations(tenants):  # noqa: F811
+    from agents.andromeda.middleware.auth import _EXEMPT_ROUTES
+    from core.accounts import tenant_scoped
+
+    client, _, b = tenants
+    exempt = set(_EXEMPT_ROUTES)
+    scoped, refused = set(), []
+    for route in svc.app.routes:
+        for method in getattr(route, "methods", None) or ():
+            if method in ("HEAD", "OPTIONS") or (method, route.path) in exempt:
+                continue
+            if tenant_scoped(method, _probe(route.path)):
+                scoped.add((method, route.path))
+            else:
+                refused.append((method, route.path))
+    # Adding a route to this list is the review step: it must filter by the principal's organization.
+    assert scoped == {
+        ("GET", "/auth/me"), ("POST", "/task"), ("POST", "/jobs"), ("GET", "/jobs"), ("GET", "/jobs/{job_id}"),
+        ("POST", "/jobs/{job_id}/cancel"), ("POST", "/goals"), ("GET", "/goals"), ("GET", "/goals/{goal_id}"),
+        ("POST", "/goals/{goal_id}/resume"), ("POST", "/goals/{goal_id}/pause"), ("POST", "/goals/{goal_id}/cancel"),
+        ("POST", "/goals/{goal_id}/tasks/{task_id}/rerun"), ("GET", "/review/queue"), ("GET", "/review/queue/stats"),
+        ("GET", "/review/queue/{task_id}"), ("POST", "/review/queue/{task_id}/approve"),
+        ("POST", "/review/queue/{task_id}/accept"), ("POST", "/review/queue/{task_id}/reject"),
+        ("POST", "/tasks/{task_id}/feedback"), ("GET", "/tasks/recent"), ("GET", "/tasks/stats"),
+        ("GET", "/tasks/throughput"), ("GET", "/status"), ("POST", "/memory"), ("GET", "/memory"),
+        ("GET", "/memory/namespaces"), ("DELETE", "/memory/{memory_id}"), ("GET", "/artifacts"),
+        ("GET", "/artifacts/history"), ("GET", "/artifacts/diff"), ("POST", "/artifacts/rollback"),
+        ("POST", "/repositories"), ("GET", "/repositories/{repository_id}"), ("POST", "/github/pull-request"),
+        ("POST", "/github/check-run"), ("GET", "/agents"), ("GET", "/catalog"), ("GET", "/quasar"),
+        ("GET", "/wormhole"), ("GET", "/openapi.json"), ("GET", "/docs"), ("GET", "/docs/oauth2-redirect"),
+        ("GET", "/redoc"),
+    }
+    assert refused, "expected platform-wide routes to exist"
+    for method, path in refused:
+        response = client.request(method, _probe(path), json={}, headers=b)
+        assert response.status_code == 403 and response.json() == {"error": "forbidden"}, (method, path)
+
+
+@pytest.mark.parametrize("method,path", [
+    ("GET", "/audit/events"), ("GET", "/audit/verify"), ("GET", "/config"), ("POST", "/config"),
+    ("POST", "/forge/agent"), ("GET", "/orion/export"), ("GET", "/finetune/candidates"), ("GET", "/lessons"),
+    ("GET", "/scorecards"), ("GET", "/github/installations"),
+])
+def test_other_organizations_admin_cannot_reach_platform_wide_routes(tenants, method, path):  # noqa: F811
+    client, a, _ = tenants
+    assert client.request(method, path, json={}, headers=a).status_code == 403
+
+
+# --- review follow-ups -----------------------------------------------------------------------------
+
+def test_repository_ownership_ignores_case(tenants, repos):  # noqa: F811
+    client, a, b = tenants
+    assert client.post("/repositories", json=REPO, headers=a).status_code == 201
+    mixed = {**REPO, "owner": "Acme", "name": "API"}
+    assert client.post("/repositories", json=mixed, headers=b).status_code == 422
+    assert repos.holder("GitHub", "ACME", "Api") == "org-a"
+
+
+def test_artifacts_with_namespaced_keys_work_with_object_storage(tmp_path):
+    from core.artifacts.object_storage import LocalObjectStorage
+
+    store = ArtifactStore(str(tmp_path / "o.db"), object_storage=LocalObjectStorage(str(tmp_path / "objects")))
+    store.record([{"filename": "a.txt", "content": "hello"}], "", "t", "s", organization_id="org-a")
+    key = identity_key("", "a.txt", "org-a")
+    assert store.get_version(key, 1, organization_id="org-a")["content"] == "hello"
+    assert store.get_version(key, 1, organization_id="org-b") is None
+    assert store.get_version(key, 1)["content"] == "hello"  # platform internals (the completion publisher)
