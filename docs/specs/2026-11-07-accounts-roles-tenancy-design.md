@@ -1,6 +1,6 @@
 # Accounts, roles and multi-tenancy — design
 
-Date: 2026-11-07. Depends on: audit logging. Status: drafted at the maintainer's request; **phase A implemented** (phase B1 implemented, B2/B3 and C not).
+Date: 2026-11-07. Depends on: audit logging. Status: drafted at the maintainer's request; **phase A implemented** (phase B1 and B2 implemented, B3 and C not).
 
 ## Problem
 Auth is one shared `GALAXZ_API_KEY`. Everyone who has it is an administrator, and the identity
@@ -60,7 +60,7 @@ queue, repositories and memory have none.
 | `memories` (Nebula) | `organization_id` column | recall must filter by organization: a leak here puts another tenant's notes into a prompt |
 | `artifact_versions` | existing column, made NOT NULL | already scoped in object storage |
 | `policy_grants` | `organization_id` column | grants are authority; they must not cross tenants |
-| Orion (fine-tune candidates, lessons, scorecards) | **B2**, separate PR | Orion is a separate service with its own stores; scope after the core path is proven |
+| Orion (fine-tune candidates, lessons, scorecards) | **B3**, separate PR | Orion is a separate service with its own stores; scope after the core path is proven |
 | Pulsar registry, LLM limiter, provider config | **global** | agents are platform resources shared by all tenants |
 | Audit log | **global**, `organization_id` recorded per event | one tamper-evident chain; `audit:read` stays admin-only; events gain an `organization_id` field so exports can be filtered |
 | Secrets | already scoped | `SecretScope.organization_id` is unchanged; as of B1 the resolver uses the task's organization (a `default` task keeps using `GALAXZ_ORGANIZATION_ID`) |
@@ -101,7 +101,7 @@ unauthenticated monitor that scrapes them; it is called out in the CHANGELOG.
 
 1. **B1** — `TaskContract.organization_id`, migration `0007`, goals/tasks/jobs/worker, `org-create`, close
    the exempt reads.
-2. **B2** — review queue, artifacts, repositories, memory, policy grants.
+2. **B2** — review queue and task log (B2a); artifacts, repositories, memory, policy grants, GitHub and `org-create` (B2b).
 3. **B3** — Orion stores.
 
 Each PR keeps single-organization behaviour byte-for-byte. Tests: a two-organization fixture and a test
@@ -145,15 +145,64 @@ database.
   gets 404.
 - Two latent PostgreSQL bugs surfaced by the new Postgres test and fixed here: `PostgresTaskLog.write` sent a
   boolean to an integer column, and `PostgresReviewQueue.get_stats` compared a text deadline to a timestamp.
-- Still unscoped (B2b): artifacts, repositories, memory, policy grants, the A2A gateway; `org-create` still
-  waits for B2b.
+
+### B2b as built (artifacts, memory, repositories, grants, GitHub, `org-create`)
+
+- **Artifacts.** Migration `0009_artifact_scope` backfills `artifact_versions.organization_id` to `default` and
+  makes it NOT NULL. The identity key of a non-default organization is `org:<id>::<root>::<file>`, so equal paths
+  in two organizations never share a version history (keys for `default` are unchanged). `list_files` requires
+  `organization_id`; `history`, `get_version`, `latest_version_number` and `diff` also filter on it. The routes
+  **no longer accept `organization_id` from the query string or body** (it was client-controlled); it comes from
+  the principal. The completion publisher and Andromeda's direct path record artifacts under the task's
+  organization.
+- **Memory (Nebula).** `memories.organization_id` (added on open, existing rows in `default`). `recall`, `list`,
+  `namespaces` and `forget` require `organization_id`; the prompt builder passes the task's. Approved skill
+  lessons are written under the approving user's organization, so a tenant only gets lessons its own reviewers
+  approved; the shared `default` lessons are not injected into other organizations.
+- **Policy grants.** `policy_grants.organization_id`; `consume` only matches a grant issued in the same
+  organization as the held task.
+- **Repositories.** The table is rebuilt on open (its UNIQUE key had to gain the organization), existing rows
+  land in `default`. `get` and `resolve_base` require `organization_id`. **A repository belongs to one
+  organization**: registering a provider/owner/name that another organization holds is refused (422), and a
+  goal cannot bind another organization's repository.
+- **GitHub (decision for the open question).** An installation is access to repositories, not a tenant:
+  there is no separate installation binding. `POST /github/pull-request` and `/github/check-run` need the
+  repository registered to the caller's organization (another organization's, or an unregistered one, is 404);
+  unregistered repositories stay usable by `default` so single-organization deployments are unchanged.
+  `GET /github/installations*` list every repository an installation can reach, so they are `default` only
+  (403 otherwise).
+- **A2A gateway.** Unchanged: inbound A2A tasks run in the `default` organization and a caller can only see
+  jobs with its own origin. Mapping a caller token to an organization is a one-line config change when needed.
+- **Review-resume path.** Keeps its single unscoped goal lookup: the review item was already authorised for the
+  caller's organization and carries a goal of the same organization.
+- **Platform-wide routes are closed to other organizations.** `core.accounts.permissions.tenant_scoped` lists the
+  routes that filter by the principal's organization; any other route returns 403 to a principal outside
+  `default` (the audit chain, `/config`, `/forge/*`, `/catalog/*/install`, `/orion/*`, `/finetune/*`, `/lessons*`,
+  `/scorecards*`, `/github/installations*`). A new route therefore fails closed until it is scoped and listed;
+  a guard test pins the list. Shared read-only views (`/agents`, `/catalog`, `/quasar`, `/wormhole`) stay open.
+  Consequence: organization admins cannot run lessons, fine-tune review or scorecards until B3.
+- **Orion ingestion is still platform-wide.** Task feedback from every organization is ingested into Orion's
+  unscoped events, readable only through the `default`-only `/orion/*` routes. Treat the `default` organization
+  as the platform operator until B3.
+- **Repository identity is case-insensitive** (GitHub names are), and the ownership check and insert happen under
+  one lock. Claims are first come, first served: with a shared installation, any admin who can
+  `POST /repositories` can claim a repository the installation reaches, and once claimed the `default`
+  organization loses its legacy unregistered access to it.
+- **Secrets.** `galaxz secret put --organization <id>` stores a secret for another organization (otherwise
+  `GALAXZ_ORGANIZATION_ID`, then `default`). Do not set `GALAXZ_ORGANIZATION_ID` on a multi-tenant server: `default`
+  tasks would resolve that organization's secrets.
+- **`org-create`.** `galaxz admin org-create <id> [--name]`, `org-list`, and `user-create --organization`
+  (the organization must exist). Ids are `[a-z0-9-]{2,63}` because they end up inside storage keys.
+  This is the first point at which a second organization can exist.
+- Not scoped on purpose: evidence ids in `POST /github/pull-request` (`goal_id`, `task_ids`) are only echoed
+  into the PR body.
 
 ### Risks to review
 
 - Nebula recall and policy grants are the two places a leak turns into prompt content or authority, so they
   are in B2 with their own cross-tenant tests.
-- GitHub App installations and repository registrations must be tied to an organization; B2 decides
-  whether an installation is per organization or shared.
+- GitHub App installations are shared and repositories are owned by one organization (see "B2b as built");
+  revisit if an installation must be restricted to a tenant before a hosted launch.
 - Application-layer filtering depends on every query remembering the filter; the required-keyword
   signature and the route-walk test are the guard, not RLS.
 
@@ -191,7 +240,7 @@ exact permission names.
   PostgreSQL 16.
 
 ## Not yet done
-- Phase B (organization scoping of goals, repositories, jobs, memory, artifacts) and C (quotas).
+- Phase B3 (Orion stores: fine-tune candidates, lessons, scorecards) and C (quotas).
 - Prism has no login: it authenticates with the deployment's `GALAXZ_API_KEY`, so all its users act as that
   key's administrator. The OIDC spec is what fixes this.
 - Rate limiting on failed token attempts.

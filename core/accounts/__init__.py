@@ -2,7 +2,7 @@ import os
 import threading
 from pathlib import Path
 
-from .permissions import ROLES, allows, declared_permission, required_permission
+from .permissions import ROLES, allows, declared_permission, required_permission, tenant_scoped
 from .store import AccountError, AccountStore, Principal, User
 
 _stores: dict[str, AccountStore] = {}
@@ -28,5 +28,5 @@ def get_account_store() -> AccountStore:
 
 __all__ = [
     "AccountError", "AccountStore", "Principal", "ROLES", "User", "account_store_url",
-    "allows", "declared_permission", "get_account_store", "required_permission",
+    "allows", "declared_permission", "get_account_store", "required_permission", "tenant_scoped",
 ]

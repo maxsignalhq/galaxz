@@ -73,3 +73,14 @@ def test_first_user_without_an_api_key_warns_about_prism(monkeypatch):
 def test_no_warning_when_an_api_key_is_configured(monkeypatch):
     monkeypatch.setenv("GALAXZ_API_KEY", "k")
     assert "warning" not in _run("user-create", "a@x.io", "--role", "admin").output
+
+
+def test_second_organization_is_created_explicitly_and_isolated_by_user_creation():
+    assert _run("user-create", "x@x.io", "--role", "viewer", "--organization", "acme").exit_code != 0  # unknown org
+    created = _run("org-create", "acme", "--name", "Acme Inc")
+    assert created.exit_code == 0, created.output
+    assert _run("org-create", "acme").exit_code != 0  # no silent re-create
+    assert _run("org-create", "Bad::Id").exit_code != 0  # ids end up inside storage keys
+    assert _run("user-create", "x@x.io", "--role", "viewer", "--organization", "acme").exit_code == 0
+    assert "acme\tAcme Inc" in _run("org-list").output
+    assert "x@x.io\tviewer\tactive\tacme" in _run("user-list").output

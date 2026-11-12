@@ -7,7 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from core.accounts import Principal, allows, get_account_store, required_permission
+from core.accounts import Principal, allows, get_account_store, required_permission, tenant_scoped
 
 logger = logging.getLogger(__name__)
 
@@ -74,4 +74,6 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         request.state.principal = principal.as_state()
         if not allows(principal.role, required_permission(method, path)):
             return JSONResponse({"error": "forbidden"}, status_code=403)
+        if principal.organization_id != "default" and not tenant_scoped(method, path):
+            return JSONResponse({"error": "forbidden"}, status_code=403)  # platform-wide route
         return await call_next(request)

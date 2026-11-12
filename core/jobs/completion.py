@@ -47,10 +47,11 @@ class CompletionPublisher:
             task_id=str(task.task_id),
             skill=task.skill,
             attempt_id=event["attempt_id"],
+            organization_id=task.organization_id,
         )
         references = []
         for version in versions:
-            row = self.artifacts.get_version(version["identity_key"], version["version"])
+            row = self.artifacts.get_version(version["identity_key"], version["version"], organization_id=task.organization_id)
             if row is None:
                 raise RuntimeError("artifact publication did not persist its content")
             references.append({

@@ -20,6 +20,8 @@ from sqlalchemy.engine import Engine
 from .permissions import ROLES
 
 DEFAULT_ORGANIZATION = "default"
+# Organization ids end up inside storage keys (``org:<id>::...``), so keep them to a boring alphabet.
+_ORGANIZATION_ID = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 _SQLITE_DDL = (
@@ -94,7 +96,23 @@ class AccountStore:
             rows = c.execute(text("SELECT * FROM users ORDER BY created_at, email")).mappings().all()
         return [self._user(row) for row in rows]
 
+    def organization_exists(self, organization_id: str) -> bool:
+        with self.engine.connect() as c:
+            return c.execute(text("SELECT 1 FROM organizations WHERE id=:id"), {"id": organization_id}).first() is not None
+
+    def list_organizations(self) -> list[dict]:
+        with self.engine.connect() as c:
+            rows = c.execute(text("SELECT id, name FROM organizations ORDER BY id")).mappings().all()
+        return [dict(row) for row in rows]
+
+    def create_organization(self, organization_id: str, name: str = "") -> None:
+        if self.organization_exists(organization_id):
+            raise AccountError(f"organization {organization_id} already exists")
+        self.ensure_organization(organization_id, name or organization_id)
+
     def ensure_organization(self, organization_id: str = DEFAULT_ORGANIZATION, name: str = "Default") -> None:
+        if not _ORGANIZATION_ID.match(organization_id):
+            raise AccountError("organization id must be 2-63 characters: lowercase letters, digits and '-'")
         with self._lock, self.engine.begin() as c:
             if c.execute(text("SELECT 1 FROM organizations WHERE id=:id"), {"id": organization_id}).first() is None:
                 c.execute(text("INSERT INTO organizations (id, name, created_at) VALUES (:id, :name, :at)"),

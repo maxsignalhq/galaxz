@@ -3,17 +3,6 @@
     "schemas": {
       "ArtifactRollbackRequest": {
         "properties": {
-          "organization_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Organization Id"
-          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -856,22 +845,6 @@
               ],
               "title": "Project Id"
             }
-          },
-          {
-            "in": "query",
-            "name": "organization_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Organization Id"
-            }
           }
         ],
         "responses": {
@@ -934,22 +907,6 @@
                 }
               ],
               "title": "Project Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "organization_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Organization Id"
             }
           }
         ],

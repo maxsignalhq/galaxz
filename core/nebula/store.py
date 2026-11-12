@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS memories (
     content        TEXT NOT NULL,
     tags           TEXT NOT NULL,
     source_task_id TEXT,
-    created_at     TEXT NOT NULL
+    created_at     TEXT NOT NULL,
+    organization_id TEXT NOT NULL DEFAULT 'default'
 )
 """
 _CREATE_INDEX = "CREATE INDEX IF NOT EXISTS idx_memories_ns ON memories (namespace, created_at)"
@@ -47,6 +48,9 @@ class NebulaStore:
         self._db_path = db_path
         with self._connect() as conn:
             conn.execute(_CREATE_TABLE)
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(memories)")}
+            if "organization_id" not in columns:
+                conn.execute("ALTER TABLE memories ADD COLUMN organization_id TEXT NOT NULL DEFAULT 'default'")
             conn.execute(_CREATE_INDEX)
 
     def _connect(self) -> sqlite3.Connection:
@@ -71,13 +75,14 @@ class NebulaStore:
         content: str,
         tags: list[str] | None = None,
         source_task_id: UUID | None = None,
+        organization_id: str = "default",
     ) -> MemoryEntry:
         entry = MemoryEntry(
             namespace=namespace, content=content, tags=tags or [], source_task_id=source_task_id
         )
         with self._lock, self._connect() as conn:
             conn.execute(
-                "INSERT INTO memories VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO memories (memory_id, namespace, content, tags, source_task_id, created_at, organization_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     str(entry.memory_id),
                     entry.namespace,
@@ -85,24 +90,26 @@ class NebulaStore:
                     json.dumps(entry.tags),
                     str(entry.source_task_id) if entry.source_task_id else None,
                     entry.created_at.isoformat(),
+                    organization_id,
                 ),
             )
         return entry
 
-    def list(self, namespace: str, limit: int = 50) -> list[MemoryEntry]:
-        return self.recall([namespace], limit=limit)
+    def list(self, namespace: str, limit: int = 50, *, organization_id: str | None) -> list[MemoryEntry]:
+        return self.recall([namespace], limit=limit, organization_id=organization_id)
 
     def recall(
-        self, namespaces: list[str], query: str | None = None, limit: int = 5
+        self, namespaces: list[str], query: str | None = None, limit: int = 5, *, organization_id: str | None
     ) -> list[MemoryEntry]:
+        """One organization's notes (``None`` = every organization, platform internals only)."""
         if not namespaces or limit < 1:
             return []
         marks = ",".join("?" for _ in namespaces)
         with self._lock, self._connect() as conn:
             rows = conn.execute(
-                f"SELECT * FROM memories WHERE namespace IN ({marks}) "
+                f"SELECT * FROM memories WHERE namespace IN ({marks}) AND (? IS NULL OR organization_id = ?) "
                 "ORDER BY created_at DESC LIMIT ?",
-                (*namespaces, _SCAN_LIMIT),
+                (*namespaces, organization_id, organization_id, _SCAN_LIMIT),
             ).fetchall()
         entries = [self._entry(r) for r in rows]  # newest first
         wanted = _tokens(query) if query else set()
@@ -115,15 +122,19 @@ class NebulaStore:
         ranked = sorted((p for p in scored if p[0] > 0), key=lambda p: -p[0])
         return [e for _, e in ranked[:limit]]
 
-    def namespaces(self) -> list[dict]:
+    def namespaces(self, *, organization_id: str | None) -> list[dict]:
         with self._lock, self._connect() as conn:
             rows = conn.execute(
-                "SELECT namespace, COUNT(*) AS count FROM memories "
-                "GROUP BY namespace ORDER BY count DESC, namespace"
+                "SELECT namespace, COUNT(*) AS count FROM memories WHERE (? IS NULL OR organization_id = ?) "
+                "GROUP BY namespace ORDER BY count DESC, namespace",
+                (organization_id, organization_id),
             ).fetchall()
         return [{"namespace": r["namespace"], "count": r["count"]} for r in rows]
 
-    def forget(self, memory_id: UUID) -> bool:
+    def forget(self, memory_id: UUID, *, organization_id: str | None) -> bool:
         with self._lock, self._connect() as conn:
-            cur = conn.execute("DELETE FROM memories WHERE memory_id = ?", (str(memory_id),))
+            cur = conn.execute(
+                "DELETE FROM memories WHERE memory_id = ? AND (? IS NULL OR organization_id = ?)",
+                (str(memory_id), organization_id, organization_id),
+            )
             return cur.rowcount > 0

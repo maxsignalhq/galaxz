@@ -39,6 +39,13 @@ the working tree. It is intended to be reviewed before the next GitHub push.
   `0008_review_task_scope`); `/task`, `/review/queue*`, `/tasks/*`, `/status` and task feedback only see the
   caller's organization. Fixes two PostgreSQL bugs in `PostgresTaskLog.write` and
   `PostgresReviewQueue.get_stats`.
+- Tenant scoping (accounts phase B2b): artifacts (migration `0009_artifact_scope`), Nebula memory, policy grants and
+  the repository registry are per organization, and `galaxz admin org-create` / `org-list` / `user-create
+  --organization` make a second organization possible. A repository belongs to one organization; GitHub pull-request
+  and check-run calls need the repository registered to the caller's organization, and installation listings are
+  `default`-only. Routes that are not tenant-scoped (audit, config, forge, Orion, fine-tune, lessons, scorecards) return 403 to
+  other organizations until phase B3. `secret put --organization` added. **Behaviour change:** the artifact routes no longer read `organization_id` from the query string or
+  body; it comes from the authenticated principal.
 - Secret references: `${{ secrets.<id> }}` in a `quasar.*` tool payload is resolved
   only while the tool runs (scoped to organization, repository and skill) and
   redacted from results and errors, so plaintext never reaches the goal, job,

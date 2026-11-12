@@ -58,6 +58,6 @@ def test_route_records_produced_artifacts(registry_with_fake_agent, tmp_path):
 
     andromeda.route(task=task)
 
-    files = artifact_store.list_files()
+    files = artifact_store.list_files(organization_id=None)
     assert len(files) == 1
     assert files[0]["identity_key"] == identity_key("", "out.py")

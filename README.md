@@ -278,7 +278,15 @@ Galaxz is designed for local and trusted-network deployment. Authentication is o
 - Mutating and rejected requests are recorded in a tamper-evident audit log
   (`GET /audit/events`, `python -m cli.run audit verify`).
 
-Multi-tenant data isolation, single sign-on and per-agent credentials are specified in
+- **Organizations (tenants):** `admin org-create acme` then `admin user-create bob@acme.io --role operator
+  --organization acme`. Goals, jobs, tasks, reviews, artifacts, memory, repositories and policy grants are scoped to
+  the caller's organization (another organization's data answers 404). A repository belongs to one organization;
+  GitHub installations are shared access, so PR and check-run calls need the repository registered to the caller.
+  Platform-wide routes (audit, config, forge, Orion, fine-tune candidates, lessons, scorecards) answer 403 to
+  every organization except `default` until Orion's stores are scoped. `GALAXZ_API_KEY` is an administrator of
+  `default` only; use `secret put --organization acme` for another organization's secrets.
+
+Single sign-on and per-agent credentials are specified in
 `docs/specs/2026-11-07-v2-identity-governance-overview.md` and not implemented yet. Prism sends the
 configured `GALAXZ_API_KEY`, so everyone using one Prism deployment acts as that key's administrator
 until SSO lands.

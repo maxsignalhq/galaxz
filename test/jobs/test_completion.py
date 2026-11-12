@@ -45,7 +45,7 @@ def test_completion_publishes_only_committed_evidence_and_replays(completion):
     publisher = CompletionPublisher(jobs, artifacts, reviews)
     publisher.publish_pending()
     assert reviews.get_pending(organization_id="default") == []
-    assert artifacts.list_files() == []
+    assert artifacts.list_files(organization_id=None) == []
     finish(completion)
     finish(completion)
     publisher.publish_pending()
@@ -76,7 +76,7 @@ def test_failed_publication_is_recoverable(completion, monkeypatch, boundary):
     if boundary != "ack":
         assert reviews.get_pending(organization_id="default") == []
     if boundary == "artifact":
-        assert artifacts.list_files() == []
+        assert artifacts.list_files(organization_id=None) == []
     monkeypatch.setattr(target, method, original)
     # Reopen the durable queue to simulate restart.
     restarted = SqliteJobRepository(jobs.database)
@@ -135,7 +135,7 @@ def test_artifact_batch_failure_does_not_publish_partial_versions(completion):
         artifacts.record([{"filename": "a.py", "content": "first"}, {"filename": "b.py"}],
                          workspace_root="", task_id="task", skill="skill",
                          attempt_id=str(attempt.attempt_id))
-    assert artifacts.list_files() == []
+    assert artifacts.list_files(organization_id=None) == []
 
 
 def test_expired_completion_cannot_publish_evidence(completion):
@@ -146,7 +146,7 @@ def test_expired_completion_cannot_publish_evidence(completion):
                       now=datetime.now(timezone.utc) + timedelta(minutes=1))
     CompletionPublisher(jobs, artifacts, reviews).publish_pending()
     assert jobs.pending_completions() == []
-    assert artifacts.list_files() == []
+    assert artifacts.list_files(organization_id=None) == []
     assert reviews.get_pending(organization_id="default") == []
 
 
@@ -186,11 +186,11 @@ def test_durable_routing_defers_artifacts_and_reviews(tmp_path):
     result = router.route(task=task)
     assert result["status"] == "escalated"
     assert result["artifacts"]
-    assert artifacts.list_files() == []
+    assert artifacts.list_files(organization_id=None) == []
     assert reviews.get_pending(organization_id="default") == []
     # The synchronous migration path still publishes immediately.
     router.route(task=task.model_copy(update={"execution_attempt_id": None}))
-    assert len(artifacts.list_files()) == 1
+    assert len(artifacts.list_files(organization_id=None)) == 1
     assert len(reviews.get_pending(organization_id="default")) == 1
 
 

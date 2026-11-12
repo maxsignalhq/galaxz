@@ -74,6 +74,41 @@ _RULES: tuple[tuple[str, str, str], ...] = (
     ("GET", r"/wormhole", READ),
 )
 
+# Routes an organization other than ``default`` may call. Everything else is platform-wide (the audit
+# chain, provider/workspace config, scaffolding, Orion's stores, GitHub installation listings) and is
+# refused for other organizations, so a new route fails closed until it is scoped and listed here.
+_TENANT_RULES: tuple[tuple[str, str], ...] = (
+    ("GET", r"/auth/me"),
+    ("POST", r"/task"),
+    ("POST", r"/jobs"),
+    ("GET", r"/jobs(/.*)?"),
+    ("POST", rf"/jobs/{_SEG}/cancel"),
+    ("POST", r"/goals"),
+    ("GET", r"/goals(/.*)?"),
+    ("POST", rf"/goals/{_SEG}/(cancel|pause|resume)"),
+    ("POST", rf"/goals/{_SEG}/tasks/{_SEG}/rerun"),
+    ("GET", r"/review/queue(/.*)?"),
+    ("POST", rf"/review/queue/{_SEG}/(accept|approve|reject)"),
+    ("POST", rf"/tasks/{_SEG}/feedback"),
+    ("GET", r"/tasks/(recent|stats|throughput)"),
+    ("GET", r"/status"),
+    ("POST", r"/memory"),
+    ("GET", r"/memory(/namespaces)?"),
+    ("DELETE", rf"/memory/{_SEG}"),
+    ("GET", r"/artifacts(/(diff|history))?"),
+    ("POST", r"/artifacts/rollback"),
+    ("POST", r"/repositories"),
+    ("GET", rf"/repositories/{_SEG}"),
+    ("POST", r"/github/(pull-request|check-run)"),
+    # shared platform resources, read-only
+    ("GET", r"/agents"),
+    ("GET", r"/catalog"),
+    ("GET", r"/quasar"),
+    ("GET", r"/wormhole"),
+    ("GET", r"/(openapi\.json|docs|docs/oauth2-redirect|redoc)"),
+)
+_TENANT_COMPILED = tuple((method, re.compile(pattern)) for method, pattern in _TENANT_RULES)
+
 _COMPILED = tuple((method, re.compile(pattern), permission) for method, pattern, permission in _RULES)
 
 
@@ -83,6 +118,12 @@ def declared_permission(method: str, path: str) -> str | None:
         if rule_method == method and pattern.fullmatch(path):
             return permission
     return None
+
+
+def tenant_scoped(method: str, path: str) -> bool:
+    """True when the route is safe for an organization other than ``default``."""
+    method = method.upper()
+    return any(rule_method == method and pattern.fullmatch(path) for rule_method, pattern in _TENANT_COMPILED)
 
 
 def required_permission(method: str, path: str) -> str:
